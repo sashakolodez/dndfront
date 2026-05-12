@@ -4,7 +4,7 @@ import router from '@/router/index.js';
 import store from "@/store/index.js";
 import axios from 'axios'
 
-axios.defaults.baseURL = 'http://localhost:8000';
+axios.defaults.baseURL = 'http://localhost:7777';
 
 createApp(App)
     .use(router)

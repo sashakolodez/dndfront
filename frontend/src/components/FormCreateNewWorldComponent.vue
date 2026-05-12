@@ -1,13 +1,61 @@
 <template>
   <div class="storyforge-form-container">
-    <!-- Декоративный фон с сеткой и свечением (в стиле STORYFORGE) -->
+    <!-- Декоративный фон с сеткой и свечением -->
     <div class="grid-overlay"></div>
     <div class="glow-orb glow-orb-1"></div>
     <div class="glow-orb glow-orb-2"></div>
 
+    <!-- Оверлей загрузки -->
+    <div v-if="isLoading" class="loading-overlay">
+      <div class="loading-content">
+        <!-- Крутилка -->
+        <div class="spinner-container">
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring spinner-ring-2"></div>
+          <div class="spinner-ring spinner-ring-3"></div>
+          <div class="spinner-core">
+            <span class="core-icon">◈</span>
+          </div>
+        </div>
+
+        <!-- Текст загрузки -->
+        <div class="loading-text">
+          <h3 class="loading-title">СОЗДАНИЕ МИРА</h3>
+          <p class="loading-subtitle">Нейросеть генерирует вселенную...</p>
+        </div>
+
+        <!-- Прогресс-бар -->
+        <div class="progress-container">
+          <div class="progress-bar">
+            <div class="progress-fill"></div>
+          </div>
+        </div>
+
+        <!-- Шаги создания -->
+        <div class="loading-steps">
+          <div class="step" :class="{ 'step-active': currentStep >= 1, 'step-done': currentStep > 1 }">
+            <span class="step-icon">{{ currentStep > 1 ? '✓' : '🌌' }}</span>
+            <span class="step-text">Генерация галактики</span>
+          </div>
+          <div class="step" :class="{ 'step-active': currentStep >= 2, 'step-done': currentStep > 2 }">
+            <span class="step-icon">{{ currentStep > 2 ? '✓' : '👥' }}</span>
+            <span class="step-text">Создание NPC</span>
+          </div>
+          <div class="step" :class="{ 'step-active': currentStep >= 3, 'step-done': currentStep > 3 }">
+            <span class="step-icon">{{ currentStep > 3 ? '✓' : '📜' }}</span>
+            <span class="step-text">Написание сюжета</span>
+          </div>
+          <div class="step" :class="{ 'step-active': currentStep >= 4 }">
+            <span class="step-icon">🎮</span>
+            <span class="step-text">Запуск игры</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Карточка формы -->
     <div class="form-card">
-      <!-- Заголовок в стиле киберпанк/космооперы -->
+      <!-- Заголовок -->
       <div class="form-header">
         <div class="title-line">
           <span class="title-accent">//</span>
@@ -17,9 +65,9 @@
         <div class="subtitle">ВИРТУАЛЬНЫЙ МАСТЕР · ГЕНЕРАЦИЯ СЮЖЕТА</div>
       </div>
 
-      <!-- Сама форма -->
-      <form @submit.prevent="handleSubmit" class="adventure-form">
-        <!-- Поле: Название приключения -->
+      <!-- Форма -->
+      <form class="adventure-form" @submit.prevent>
+        <!-- Название приключения -->
         <div class="input-group">
           <label for="adventure-name" class="input-label">
             <span class="label-icon">⟡</span>
@@ -32,11 +80,12 @@
               placeholder="например: Эхо Андромеды"
               class="input-field"
               :class="{ 'input-filled': form.adventureName }"
+              :disabled="isLoading"
           />
           <div class="input-hint">Выберите имя, достойное легенд</div>
         </div>
 
-        <!-- Поле: Количество игроков (слайдер + число) -->
+        <!-- Количество игроков -->
         <div class="input-group">
           <label class="input-label">
             <span class="label-icon">⚔</span>
@@ -52,6 +101,7 @@
                   max="10"
                   step="1"
                   class="player-slider"
+                  :disabled="isLoading"
               />
               <div class="slider-ticks">
                 <span v-for="n in 10" :key="n"
@@ -68,7 +118,6 @@
             </div>
           </div>
 
-          <!-- Быстрые пресеты -->
           <div class="player-presets">
             <button
                 type="button"
@@ -77,6 +126,7 @@
                 @click="form.playerCount = preset"
                 class="preset-btn"
                 :class="{ 'preset-active': form.playerCount === preset }"
+                :disabled="isLoading"
             >
               {{ preset }}
             </button>
@@ -84,7 +134,7 @@
           <div class="input-hint">От 1 до 10 · можно изменить в любой момент</div>
         </div>
 
-        <!-- Динамический блок с текущим статусом (как в "Виртуальный мастер онлайн") -->
+        <!-- Статус -->
         <div class="live-status">
           <div class="status-indicator">
             <span class="pulse-dot"></span>
@@ -104,14 +154,22 @@
         </div>
 
         <!-- Кнопка отправки -->
-        <button type="submit" class="submit-btn">
-          <span class="btn-text">НАЧАТЬ ИССЛЕДОВАНИЕ</span>
-          <span class="btn-icon">→</span>
+        <button
+            type="button"
+            @click="handleSubmit()"
+            class="submit-btn"
+            :class="{ 'btn-loading': isLoading }"
+            :disabled="isLoading"
+        >
+          <span v-if="!isLoading" class="btn-text">НАЧАТЬ ИССЛЕДОВАНИЕ</span>
+          <span v-else class="btn-text">СОЗДАЁМ МИР...</span>
+          <span v-if="!isLoading" class="btn-icon">→</span>
+          <span v-else class="btn-icon btn-spinner"></span>
           <div class="btn-glow"></div>
         </button>
       </form>
 
-      <!-- Декоративная подпись (как в макете) -->
+      <!-- Футер -->
       <div class="form-footer">
         <div class="footer-features">
           <span>⚡ НЕЙРОСЕТИ</span>
@@ -133,12 +191,14 @@ export default {
     return {
       form: {
         adventureName: '',
-        playerCount: 3  // значение по умолчанию
-      }
+        playerCount: 3
+      },
+      isLoading: false,
+      currentStep: 0,
+      loadingStepsInterval: null
     }
   },
   computed: {
-    // Склонение слова "игрок" / "игрока" / "игроков"
     playerWord() {
       const count = this.form.playerCount;
       if (count % 10 === 1 && count % 100 !== 11) return 'игрок';
@@ -147,29 +207,72 @@ export default {
     }
   },
   methods: {
-    handleSubmit() {
-      // Здесь можно эмитить событие или отправлять данные
+    // Имитация шагов загрузки
+    startLoadingAnimation() {
+      this.currentStep = 0
+      const steps = [1, 2, 3, 4]
+      let index = 0
+
+      this.loadingStepsInterval = setInterval(() => {
+        if (index < steps.length) {
+          this.currentStep = steps[index]
+          index++
+        } else {
+          clearInterval(this.loadingStepsInterval)
+        }
+      }, 800)
+    },
+
+    async handleSubmit() {
       if (!this.form.adventureName.trim()) {
         alert('Введите название приключения, капитан.');
         return;
       }
 
-      console.log('🎮 Старт приключения:', {
-        name: this.form.adventureName,
-        players: this.form.playerCount
-      });
+      // Включаем загрузку
+      this.isLoading = true
+      this.startLoadingAnimation()
 
-      // Для демонстрации — показываем уведомление в стиле проекта
-      alert(`✨ Виртуальный мастер создаёт мир «${this.form.adventureName}»\n👥 Состав отряда: ${this.form.playerCount} ${this.playerWord}\n🌌 Приготовьтесь к погружению.`);
+      try {
+        // Отправляем запрос
+        await this.$store.dispatch('createGame', this.form)
 
-      // Здесь можно вызвать this.$emit('submit', { ...this.form })
+        // Небольшая задержка чтоб пользователь увидел финальный шаг
+        await new Promise(resolve => setTimeout(resolve, 500))
+
+        // Очищаем анимацию
+        clearInterval(this.loadingStepsInterval)
+        this.currentStep = 4
+
+        // Ещё маленькая пауза
+        await new Promise(resolve => setTimeout(resolve, 300))
+
+        // Переходим на страницу игры
+        this.$router.push('/game')
+
+      } catch (error) {
+        console.error('Ошибка создания игры:', error)
+        clearInterval(this.loadingStepsInterval)
+
+        // Показываем ошибку пользователю
+        alert('Произошла ошибка при создании игры. Попробуйте ещё раз.')
+
+      } finally {
+        this.isLoading = false
+      }
+    }
+  },
+  beforeUnmount() {
+    // Очищаем интервал при разрушении компонента
+    if (this.loadingStepsInterval) {
+      clearInterval(this.loadingStepsInterval)
     }
   }
 }
 </script>
 
 <style scoped>
-/* === ОСНОВНОЙ КОНТЕЙНЕР — стиль STORYFORGE (тёмный sci-fi / киберпанк) === */
+/* === ОСНОВНОЙ КОНТЕЙНЕР === */
 .storyforge-form-container {
   min-height: 100vh;
   background: radial-gradient(circle at 20% 30%, #0b0e1e, #03050c);
@@ -182,7 +285,6 @@ export default {
   overflow: hidden;
 }
 
-/* Сетка и декоративные элементы (как на скриншоте) */
 .grid-overlay {
   position: absolute;
   inset: 0;
@@ -215,6 +317,210 @@ export default {
   background: #b000ff;
   bottom: -150px;
   left: -100px;
+}
+
+/* === ОВЕРЛЕЙ ЗАГРУЗКИ === */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 12, 0.95);
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  max-width: 500px;
+  width: 100%;
+}
+
+/* Спиннер */
+.spinner-container {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  animation: spin 1.5s linear infinite;
+}
+
+.spinner-ring {
+  width: 100%;
+  height: 100%;
+  border-top-color: #00ffff;
+  border-right-color: #00ffff;
+}
+
+.spinner-ring-2 {
+  width: 80%;
+  height: 80%;
+  border-bottom-color: #b000ff;
+  border-left-color: #b000ff;
+  animation-duration: 2s;
+  animation-direction: reverse;
+}
+
+.spinner-ring-3 {
+  width: 60%;
+  height: 60%;
+  border-top-color: #00ffaa;
+  border-right-color: #00ffaa;
+  animation-duration: 1s;
+}
+
+.spinner-core {
+  width: 40%;
+  height: 40%;
+  background: rgba(0, 255, 255, 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(0, 255, 255, 0.3);
+}
+
+.core-icon {
+  font-size: 28px;
+  color: #00ffff;
+  animation: pulse-core 2s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-core {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+/* Текст загрузки */
+.loading-text {
+  text-align: center;
+}
+
+.loading-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  color: #fff;
+  margin: 0 0 8px 0;
+  text-shadow: 0 0 20px #00aaff80;
+}
+
+.loading-subtitle {
+  color: #8ab3ff;
+  font-size: 16px;
+  letter-spacing: 2px;
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* Прогресс-бар */
+.progress-container {
+  width: 100%;
+  max-width: 400px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(0, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00ffff, #b000ff, #00ffaa);
+  background-size: 200% 100%;
+  border-radius: 4px;
+  animation: progress-move 2s linear infinite;
+  width: 100%;
+}
+
+@keyframes progress-move {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+/* Шаги */
+.loading-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 350px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(0, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(0, 255, 255, 0.1);
+  transition: all 0.4s ease;
+  opacity: 0.4;
+}
+
+.step-active {
+  opacity: 1;
+  border-color: rgba(0, 255, 255, 0.4);
+  background: rgba(0, 255, 255, 0.1);
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.1);
+}
+
+.step-done {
+  opacity: 0.6;
+  border-color: rgba(0, 255, 170, 0.4);
+  background: rgba(0, 255, 170, 0.05);
+}
+
+.step-icon {
+  font-size: 20px;
+  width: 28px;
+  text-align: center;
+}
+
+.step-done .step-icon {
+  color: #00ffaa;
+}
+
+.step-text {
+  color: #b0e0ff;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.step-active .step-text {
+  color: #e0f0ff;
 }
 
 /* Карточка формы */
@@ -318,7 +624,6 @@ export default {
   filter: drop-shadow(0 0 6px cyan);
 }
 
-/* Поле ввода */
 .input-field {
   background: rgba(0, 20, 40, 0.6);
   border: 1.5px solid #1e4f6b;
@@ -332,6 +637,11 @@ export default {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4) inset;
   backdrop-filter: blur(4px);
   letter-spacing: 0.5px;
+}
+
+.input-field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .input-field::placeholder {
@@ -383,6 +693,11 @@ export default {
   -webkit-appearance: none;
   appearance: none;
   outline: none;
+}
+
+.player-slider:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .player-slider::-webkit-slider-thumb {
@@ -478,7 +793,12 @@ export default {
   box-shadow: 0 2px 6px #00000040;
 }
 
-.preset-btn:hover {
+.preset-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.preset-btn:hover:not(:disabled) {
   border-color: #00c8ff;
   color: #e0f3ff;
   background: #0a2940;
@@ -491,7 +811,7 @@ export default {
   box-shadow: 0 0 15px #00aaff;
 }
 
-/* Блок LIVE статуса (ВИРТУАЛЬНЫЙ МАСТЕР) */
+/* Блок LIVE статуса */
 .live-status {
   background: #04131fcc;
   border-left: 6px solid #00ffff;
@@ -558,11 +878,21 @@ export default {
   margin-top: 16px;
 }
 
-.submit-btn:hover {
+.submit-btn:hover:not(:disabled) {
   background: linear-gradient(145deg, #003b66, #002844);
   border-color: #00ffff;
   box-shadow: 0 10px 25px #00000080, 0 0 30px #00aaff;
   transform: scale(1.01);
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.submit-btn.btn-loading {
+  background: linear-gradient(145deg, #003b66, #002844);
+  border-color: #00ffff;
 }
 
 .btn-text {
@@ -572,6 +902,16 @@ export default {
 .btn-icon {
   font-size: 28px;
   z-index: 1;
+}
+
+/* Маленькая крутилка в кнопке */
+.btn-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #00ffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 .btn-glow {
@@ -629,6 +969,15 @@ export default {
   .submit-btn {
     font-size: 16px;
     padding: 14px 18px;
+  }
+
+  .loading-title {
+    font-size: 22px;
+  }
+
+  .spinner-container {
+    width: 100px;
+    height: 100px;
   }
 }
 </style>

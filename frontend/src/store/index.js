@@ -1,11 +1,9 @@
 import { createStore } from 'vuex';
-import UserState from "@/store/modules/users/user.state.js";
-import ProductState from "@/store/modules/Product/product.state.js";
+import GameState from "@/store/modules/game/game.state.js";
 
 const store = createStore({
     modules: {
-        UserState,
-        ProductState
+        GameState
     }
 })
 

@@ -1,5 +1,5 @@
 import {createRouter, createWebHistory} from "vue-router";
-import TestComponent from "@/components/TestComponent.vue";
+import MainComponent from "@/components/MainComponent.vue";
 import FormCreateNewWorldComponent from "@/components/FormCreateNewWorldComponent.vue";
 import RegistrationComponent from "@/components/RegistrationComponent.vue";
 import GameComponent from "@/components/GameComponent.vue";
@@ -8,8 +8,8 @@ export default createRouter({
     history:createWebHistory(),
     routes: [
         {
-            path: '/main',
-            component: TestComponent
+            path: '/',
+            component: MainComponent
         },
         {
             path: '/form',
