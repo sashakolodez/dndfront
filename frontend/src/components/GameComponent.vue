@@ -1,5 +1,67 @@
 <template>
-  <div class="game-container">
+  <div class="game-container" :class="{ 'damage-shake': isTakingDamage }">
+    <!-- Анимация изменения здоровья -->
+    <div class="health-change-overlay" v-if="isHealthChanging">
+      <div class="health-change-indicator" :class="healthChangeType">
+        <div class="health-change-icon">{{ healthChangeType === 'heal' ? '💚' : '💔' }}</div>
+        <div class="health-change-value">{{ healthChangeType === 'heal' ? '+' : '' }}{{ healthChangeValue }}</div>
+        <div class="health-change-label" v-if="healthChangeType === 'heal'">Восстановление</div>
+        <div class="health-change-label" v-else>Получен урон</div>
+      </div>
+    </div>
+
+    <!-- Затемнение при уроне -->
+    <div class="damage-overlay" v-if="isTakingDamage && healthChangeType === 'damage'"></div>
+
+    <!-- Анимация броска кубика -->
+    <div class="dice-roll-overlay" v-if="showDiceRoll">
+      <div class="dice-roll-container">
+        <div class="dice-cube" :class="{ 'dice-rolling': isDiceRolling }">
+          <div class="dice-face">{{ diceRollDisplay }}</div>
+        </div>
+        <div class="dice-roll-text" v-if="isDiceRolling">Бросаем d{{ rollingDiceSize }}...</div>
+        <div class="dice-roll-text" v-else>Результат готов!</div>
+      </div>
+    </div>
+
+    <!-- Окно результата кубика -->
+    <div class="dice-modal-overlay" v-if="showDiceResult" @click="closeDiceResult">
+      <div class="dice-modal" @click.stop>
+        <div class="dice-modal-header">🎲 Результат броска</div>
+        <div class="dice-result-main">
+          <div class="dice-result-label">Бросок d{{ diceResultData?.cube || '?' }}</div>
+          <div class="dice-result-value" :class="{ 'dice-success': diceResultData?.isSuccess, 'dice-fail': !diceResultData?.isSuccess }">
+            {{ diceResultData?.diceResult || '?' }}
+          </div>
+        </div>
+        <div class="dice-details" v-if="diceResultData">
+          <div class="dice-detail-row">
+            <span>🎯 Результат броска:</span>
+            <span>{{ diceResultData.diceResult }}</span>
+          </div>
+          <div class="dice-detail-row" v-if="diceResultData.bonus">
+            <span>✨ Бонус ({{ diceResultData.statName }}):</span>
+            <span>+{{ diceResultData.bonus }}</span>
+          </div>
+          <div class="dice-detail-row">
+            <span>📊 Итог:</span>
+            <span class="dice-total">{{ diceResultData.result }}</span>
+          </div>
+          <div class="dice-detail-row">
+            <span>🎯 Сложность:</span>
+            <span>{{ diceResultData.complexity }}</span>
+          </div>
+          <div class="dice-verdict" :class="{ 'verdict-success': diceResultData.isSuccess, 'verdict-fail': !diceResultData.isSuccess }">
+            {{ diceResultData.isSuccess ? '✅ УСПЕХ!' : '❌ ПРОВАЛ!' }}
+          </div>
+        </div>
+        <button class="dice-close-btn" @click="closeDiceResult">
+          <span>ПРОДОЛЖИТЬ</span>
+          <span>➤</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Фон -->
     <div class="grid-overlay"></div>
     <div class="glow-orb glow-orb-1"></div>
@@ -59,6 +121,15 @@
             </div>
             <div class="player-indicator" v-if="player.id === currentPlayerId">▼</div>
           </div>
+        </div>
+
+        <!-- Здоровье выбранного игрока -->
+        <div class="health-panel" v-if="selectedPlayer && selectedPlayerMaxHealth > 0">
+          <div class="health-title">❤️ Здоровье</div>
+          <div class="health-bar-container">
+            <div class="health-bar" :style="{ width: healthPercent + '%' }" :class="healthStatus"></div>
+          </div>
+          <div class="health-text">{{ selectedPlayerHealth }} / {{ selectedPlayerMaxHealth }}</div>
         </div>
 
         <!-- Инвентарь выбранного игрока -->
@@ -176,13 +247,75 @@
           <!-- Поле ввода -->
           <div class="chat-input-area">
             <div class="input-actions">
-              <button class="action-btn" @click="insertDiceRoll(20)" title="Бросить d20">
+              <button
+                  class="action-btn"
+                  :class="{ 'dice-enabled': canRollDice && requiredDice && (requiredDice.cube === 4 || requiredDice.cube === 'd4' || requiredDice.cube === '4') }"
+                  :disabled="!canRollDice || (requiredDice && requiredDice.cube !== 4 && requiredDice.cube !== 'd4' && requiredDice.cube !== '4')"
+                  @click="rollDice(4)"
+                  title="Бросить d4"
+              >
+                <span class="action-icon">🎲</span>
+                <span class="action-text">d4</span>
+              </button>
+              <button
+                  class="action-btn"
+                  :class="{ 'dice-enabled': canRollDice && requiredDice && (requiredDice.cube === 6 || requiredDice.cube === 'd6' || requiredDice.cube === '6') }"
+                  :disabled="!canRollDice || (requiredDice && requiredDice.cube !== 6 && requiredDice.cube !== 'd6' && requiredDice.cube !== '6')"
+                  @click="rollDice(6)"
+                  title="Бросить d6"
+              >
+                <span class="action-icon">🎲</span>
+                <span class="action-text">d6</span>
+              </button>
+              <button
+                  class="action-btn"
+                  :class="{ 'dice-enabled': canRollDice && requiredDice && (requiredDice.cube === 8 || requiredDice.cube === 'd8' || requiredDice.cube === '8') }"
+                  :disabled="!canRollDice || (requiredDice && requiredDice.cube !== 8 && requiredDice.cube !== 'd8' && requiredDice.cube !== '8')"
+                  @click="rollDice(8)"
+                  title="Бросить d8"
+              >
+                <span class="action-icon">🎲</span>
+                <span class="action-text">d8</span>
+              </button>
+              <button
+                  class="action-btn"
+                  :class="{ 'dice-enabled': canRollDice && requiredDice && (requiredDice.cube === 10 || requiredDice.cube === 'd10' || requiredDice.cube === '10') }"
+                  :disabled="!canRollDice || (requiredDice && requiredDice.cube !== 10 && requiredDice.cube !== 'd10' && requiredDice.cube !== '10')"
+                  @click="rollDice(10)"
+                  title="Бросить d10"
+              >
+                <span class="action-icon">🎲</span>
+                <span class="action-text">d10</span>
+              </button>
+              <button
+                  class="action-btn"
+                  :class="{ 'dice-enabled': canRollDice && requiredDice && (requiredDice.cube === 12 || requiredDice.cube === 'd12' || requiredDice.cube === '12') }"
+                  :disabled="!canRollDice || (requiredDice && requiredDice.cube !== 12 && requiredDice.cube !== 'd12' && requiredDice.cube !== '12')"
+                  @click="rollDice(12)"
+                  title="Бросить d12"
+              >
+                <span class="action-icon">🎲</span>
+                <span class="action-text">d12</span>
+              </button>
+              <button
+                  class="action-btn"
+                  :class="{ 'dice-enabled': canRollDice && requiredDice && (requiredDice.cube === 20 || requiredDice.cube === 'd20' || requiredDice.cube === '20') }"
+                  :disabled="!canRollDice || (requiredDice && requiredDice.cube !== 20 && requiredDice.cube !== 'd20' && requiredDice.cube !== '20')"
+                  @click="rollDice(20)"
+                  title="Бросить d20"
+              >
                 <span class="action-icon">🎲</span>
                 <span class="action-text">d20</span>
               </button>
-              <button class="action-btn" @click="insertDiceRoll(6)" title="Бросить d6">
+              <button
+                  class="action-btn"
+                  :class="{ 'dice-enabled': canRollDice && requiredDice && (requiredDice.cube === 100 || requiredDice.cube === 'd100' || requiredDice.cube === '100') }"
+                  :disabled="!canRollDice || (requiredDice && requiredDice.cube !== 100 && requiredDice.cube !== 'd100' && requiredDice.cube !== '100')"
+                  @click="rollDice(100)"
+                  title="Бросить d100"
+              >
                 <span class="action-icon">🎲</span>
-                <span class="action-text">d6</span>
+                <span class="action-text">d100</span>
               </button>
               <button class="action-btn" @click="insertEmoji('🎯')" title="Добавить эмодзи">
                 <span class="action-icon">😊</span>
@@ -205,9 +338,10 @@
                     @focus="isInputFocused = true"
                     @blur="isInputFocused = false"
                     class="message-input"
+                    :disabled="isInputDisabled"
                 />
 
-                <div v-if="newMessage.length > 0" class="char-counter" :class="{ 'char-limit': isInitPhase && newMessage.length >= 25 }">
+                <div v-if="newMessage.length > 0" class="char-counter">
                   {{ newMessage.length }}
                 </div>
 
@@ -224,8 +358,8 @@
               <button
                   @click="sendMessage"
                   class="send-btn"
-                  :class="{ 'has-message': isInitPhase ? newMessage.trim().length >= 25 : newMessage.trim().length > 0 }"
-                  :disabled="(isInitPhase && newMessage.trim().length < 25) || (!isInitPhase && !newMessage.trim()) || isAITyping"
+                  :class="{ 'has-message': newMessage.trim().length > 0 }"
+                  :disabled="!newMessage.trim() || isAITyping || isInputDisabled"
               >
                 <span class="send-text">ОТПРАВИТЬ</span>
                 <span class="send-icon">➤</span>
@@ -239,8 +373,6 @@
               <span class="hint-separator">•</span>
               <span class="hint-icon">⎋</span>
               <span class="hint-text">Esc</span>
-              <span class="hint-separator" v-if="isInitPhase">•</span>
-              <span v-if="isInitPhase">Мин. 25 символов</span>
             </div>
           </div>
         </div>
@@ -266,12 +398,33 @@ export default {
 
       currentPlayerId: null,
       selectedPlayer: null,
+      selectedPlayerHealth: 0,
+      selectedPlayerMaxHealth: 0,
+
+      // Эффекты здоровья
+      isHealthChanging: false,
+      healthChangeValue: 0,
+      healthChangeTimer: null,
+      isTakingDamage: false,
+
+      // Кубики
+      requiredDice: null,
+      canRollDice: false,
+      isInputDisabled: false,
+      showDiceRoll: false,
+      isDiceRolling: false,
+      diceRollDisplay: '?',
+      rollingDiceSize: 0,
+      showDiceResult: false,
+      diceResultData: null,
+      lastDiceMessageId: null,
 
       messages: [],
       nextMessageId: 1,
       lastPlayerMessageId: null,
       lastAIMessageId: null,
       lastErrorMessageId: null,
+      lastCorrectionMessageId: null,
 
       newMessage: '',
       isInputFocused: false,
@@ -287,18 +440,33 @@ export default {
       if (found && found.name) return found;
       if (found) return found;
       if (this.players.length > 0) return this.players[0];
-      return { id: 'unknown', name: 'Неизвестно', avatar: '?', color: '#666', inventory: [], stats: {} };
+      return { id: 'unknown', name: 'Неизвестно', avatar: '?', color: '#666', inventory: [], stats: {}, health: 0, maxHealth: 0 };
     },
     currentInitPlayer() {
       if (this.currentInitIndex < 0 || this.currentInitIndex >= this.players.length) return null;
       return this.players[this.currentInitIndex] || null;
     },
+    healthPercent() {
+      if (this.selectedPlayerMaxHealth <= 0) return 0;
+      return Math.round((this.selectedPlayerHealth / this.selectedPlayerMaxHealth) * 100);
+    },
+    healthStatus() {
+      if (this.healthPercent > 60) return 'health-good';
+      if (this.healthPercent > 25) return 'health-medium';
+      return 'health-low';
+    },
+    healthChangeType() {
+      if (this.healthChangeValue > 0) return 'heal';
+      if (this.healthChangeValue < 0) return 'damage';
+      return '';
+    },
     inputPlaceholder() {
+      if (this.isInputDisabled) return 'Бросьте кубик...';
       if (window.innerWidth <= 480) {
-        return this.isInitPhase ? 'Опишите персонажа (мин. 25 символов)...' : 'Опишите действие...';
+        return this.isInitPhase ? 'Опишите персонажа...' : 'Опишите действие...';
       }
       if (this.isInitPhase && this.currentInitPlayer) {
-        return 'Игрок, опишите своего персонажа (мин. 25 символов)...';
+        return 'Игрок, опишите своего персонажа...';
       }
       const player = this.currentPlayer;
       if (!player || !player.name) return 'Выберите игрока слева...';
@@ -324,7 +492,7 @@ export default {
     this.showDivider = true;
 
     setTimeout(() => {
-      this.addAIMessage('Игрок, опишите своего персонажа! (Минимум 25 символов)');
+      this.addAIMessage('Игрок, опишите своего персонажа!');
     }, 500);
 
     window.addEventListener('keydown', this.handleGlobalKeydown);
@@ -334,6 +502,7 @@ export default {
   beforeUnmount() {
     window.removeEventListener('keydown', this.handleGlobalKeydown);
     window.removeEventListener('resize', this.handleResize);
+    if (this.healthChangeTimer) clearTimeout(this.healthChangeTimer);
   },
 
   methods: {
@@ -364,20 +533,142 @@ export default {
 
       this.currentPlayerId = playerId;
       this.selectedPlayer = player;
+      this.updateHealthInfo(player);
 
       if (window.innerWidth <= 768) {
         this.closePlayersPanel();
       }
     },
 
+    updateHealthInfo(player) {
+      if (player && player.health !== undefined) {
+        this.selectedPlayerHealth = player.health;
+      } else {
+        this.selectedPlayerHealth = 0;
+      }
+      if (player && player.maxHealth !== undefined) {
+        this.selectedPlayerMaxHealth = player.maxHealth;
+      } else {
+        this.selectedPlayerMaxHealth = 100;
+      }
+    },
+
+    showHealthChangeEffect(modification) {
+      if (modification !== 0) {
+        this.healthChangeValue = modification;
+        this.isHealthChanging = true;
+        if (modification < 0) {
+          this.isTakingDamage = true;
+        }
+
+        if (this.healthChangeTimer) clearTimeout(this.healthChangeTimer);
+        this.healthChangeTimer = setTimeout(() => {
+          this.isHealthChanging = false;
+          this.isTakingDamage = false;
+          this.healthChangeValue = 0;
+        }, 2000);
+      }
+    },
+
+    removeDiceMessage() {
+      if (this.lastDiceMessageId !== null) {
+        const index = this.messages.findIndex(m => m.id === this.lastDiceMessageId);
+        if (index !== -1) {
+          this.messages.splice(index, 1);
+        }
+        this.lastDiceMessageId = null;
+      }
+    },
+
+    checkDiceRequirement() {
+      const actions = this.$store.getters.ACTIONS;
+      if (actions && actions.requiredRollOfDice) {
+        const diceReq = actions.requiredRollOfDice;
+        if (diceReq.cube) {
+          this.requiredDice = diceReq;
+          this.canRollDice = true;
+          this.isInputDisabled = true;
+          const statNames = { strength: 'Сила', dexterity: 'Ловкость', constitution: 'Телосложение', intelligence: 'Интеллект', wisdom: 'Мудрость', charisma: 'Харизма' };
+          const statName = statNames[diceReq.stat] || diceReq.stat;
+          const msg = this.addSystemMessage(`🎲 Необходимо бросить <b>d${diceReq.cube}</b> (<b>${statName}</b>)\nСложность: <b>${diceReq.complexity}</b>`);
+          this.lastDiceMessageId = msg.id;
+        }
+      } else {
+        this.requiredDice = null;
+        this.canRollDice = false;
+        this.isInputDisabled = false;
+      }
+    },
+
+    async rollDice(cube) {
+      if (!this.canRollDice || !this.requiredDice) return;
+
+      this.canRollDice = false;
+      this.rollingDiceSize = cube;
+      this.showDiceRoll = true;
+      this.isDiceRolling = true;
+
+      const rollInterval = setInterval(() => {
+        this.diceRollDisplay = Math.floor(Math.random() * cube) + 1;
+      }, 80);
+
+      try {
+        const form = {
+          gamer_id: this.requiredDice.gamerId,
+          cube: cube
+        };
+        await this.$store.dispatch('dice', form);
+        const diceData = this.$store.getters.DICE;
+
+        clearInterval(rollInterval);
+        this.isDiceRolling = false;
+
+        if (diceData) {
+          this.diceRollDisplay = diceData.diceResult;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        this.showDiceRoll = false;
+
+        if (diceData) {
+          const statNames = { strength: 'Сила', dexterity: 'Ловкость', constitution: 'Телосложение', intelligence: 'Интеллект', wisdom: 'Мудрость', charisma: 'Харизма' };
+          const statName = statNames[this.requiredDice.stat] || this.requiredDice.stat;
+
+          this.diceResultData = {
+            ...diceData,
+            cube: cube,
+            statName: statName,
+            complexity: this.requiredDice.complexity,
+            isSuccess: diceData.result >= this.requiredDice.complexity
+          };
+          this.showDiceResult = true;
+        }
+      } catch (err) {
+        clearInterval(rollInterval);
+        this.showDiceRoll = false;
+        this.isDiceRolling = false;
+        this.addErrorMessage('Ошибка при броске кубика.');
+        console.error(err);
+      }
+    },
+
+    closeDiceResult() {
+      this.showDiceResult = false;
+      this.diceResultData = null;
+      this.requiredDice = null;
+      this.isInputDisabled = false;
+
+      this.removeDiceMessage();
+
+      const actions = this.$store.getters.ACTIONS;
+      if (actions && actions.reaction) {
+        this.addAIMessage(actions.reaction, false, true);
+      }
+    },
+
     async sendMessage() {
       const text = this.newMessage.trim();
-      if (!text || this.isAITyping) return;
-
-      if (this.isInitPhase && text.length < 25) {
-        this.addErrorMessage('⚠️ Описание персонажа должно быть не менее 25 символов.');
-        return;
-      }
+      if (!text || this.isAITyping || this.isInputDisabled) return;
 
       if (this.isInitPhase) {
         await this.sendInitMessage(text);
@@ -398,6 +689,8 @@ export default {
         return;
       }
 
+      this.removeLastCorrectionMessage();
+
       this.addPlayerMessage({ id: player.id, name: 'Игрок', avatar: '?', color: '#5B8CBE' }, text);
 
       this.isAITyping = true;
@@ -409,8 +702,16 @@ export default {
         await this.$store.dispatch('initGamers', form);
 
         const data = this.$store.getters.GAMER;
-        if (data) {
+
+        if (data && data.correction && data.correction !== null && data.correction !== '') {
+          this.isAITyping = false;
+          this.addCorrectionMessage(data.correction);
+          return;
+        }
+
+        if (data && data.name) {
           const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
+
           this.players[this.currentInitIndex] = {
             id: player.id,
             name: data.name || 'Неизвестно',
@@ -419,7 +720,9 @@ export default {
             color: colors[this.currentInitIndex % colors.length],
             description: data.description || '',
             stats: data.stats || {},
-            inventory: data.inventory || []
+            inventory: data.inventory || [],
+            health: data.health || 100,
+            maxHealth: data.maxHealth || 100,
           };
         }
 
@@ -446,26 +749,30 @@ export default {
         this.addSystemMessage(`
           <b>Персонаж создан!</b><br><br>
           <b>Имя:</b> ${p.name}<br>
-          <b>Класс:</b> ${p.character || 'Нет'}<br><br>
+          <b>Класс:</b> ${p.character || 'Нет'}<br>
+          <b>Здоровье:</b> ${p.health || 100} / ${p.maxHealth || 100}<br><br>
           <b>Описание:</b><br>${p.description || 'Нет'}
           ${statsText}
           ${inventoryText}
         `);
 
         this.selectedPlayer = p;
+        this.updateHealthInfo(p);
 
         this.currentInitIndex++;
         if (this.currentInitIndex < this.players.length) {
           const next = this.players[this.currentInitIndex];
           this.currentPlayerId = next.id;
           this.selectedPlayer = next;
+          this.updateHealthInfo(next);
           setTimeout(() => {
-            this.addAIMessage('Следующий игрок, опишите своего персонажа! (Минимум 25 символов)');
+            this.addAIMessage('Следующий игрок, опишите своего персонажа!');
           }, 500);
         } else {
           this.isInitPhase = false;
           this.currentPlayerId = this.players[0]?.id || null;
           this.selectedPlayer = this.players[0] || null;
+          this.updateHealthInfo(this.players[0]);
           setTimeout(() => this.startGame(), 500);
         }
       } catch (err) {
@@ -500,19 +807,18 @@ export default {
         return;
       }
 
-      // Первое действие — очищаем чат и скрываем разделитель
       if (this.isFirstAction) {
         this.clearAllMessages();
         this.showDivider = false;
         this.isFirstAction = false;
       } else {
-        // Удаляем предыдущие сообщения
         this.removeLastPlayerMessage();
         this.removeLastAIMessage();
         this.removeLastErrorMessage();
+        this.removeLastCorrectionMessage();
+        this.removeDiceMessage();
       }
 
-      // Добавляем сообщение игрока
       this.addPlayerMessage(player, text, true);
 
       this.isAITyping = true;
@@ -526,20 +832,41 @@ export default {
         const data = this.$store.getters.ACTIONS;
         this.isAITyping = false;
 
-        // Выводим новый ответ ИИ с подсветкой
         if (data && data.reaction) {
           this.addAIMessage(data.reaction, false, true);
         }
 
-        // Обновляем инвентарь из GAMER
+        this.checkDiceRequirement();
+
         const gamerData = this.$store.getters.GAMER;
-        if (gamerData && gamerData.inventory) {
-          const playerIndex = this.players.findIndex(p => p.id === player.id);
-          if (playerIndex !== -1) {
+        const actionsData = this.$store.getters.ACTIONS;
+        const playerIndex = this.players.findIndex(p => p.id === player.id);
+
+        if (playerIndex !== -1) {
+          if (gamerData && gamerData.inventory) {
             this.players[playerIndex].inventory = gamerData.inventory;
-            if (this.selectedPlayer && this.selectedPlayer.id === player.id) {
-              this.selectedPlayer = { ...this.players[playerIndex] };
-            }
+          }
+
+          // Здоровье из GAMER.health
+          if (gamerData && gamerData.health !== undefined) {
+            this.players[playerIndex].health = gamerData.health;
+          }
+          if (gamerData && gamerData.maxHealth !== undefined) {
+            this.players[playerIndex].maxHealth = gamerData.maxHealth;
+          }
+
+          if (gamerData && gamerData.stats) {
+            this.players[playerIndex].stats = gamerData.stats;
+          }
+
+          // Модификация здоровья из ACTIONS.healthModification
+          if (actionsData && actionsData.healthModification !== undefined && actionsData.healthModification !== null && actionsData.healthModification !== 0) {
+            this.showHealthChangeEffect(actionsData.healthModification);
+          }
+
+          if (this.selectedPlayer && this.selectedPlayer.id === player.id) {
+            this.selectedPlayer = { ...this.players[playerIndex] };
+            this.updateHealthInfo(this.players[playerIndex]);
           }
         }
 
@@ -559,6 +886,8 @@ export default {
       this.lastPlayerMessageId = null;
       this.lastAIMessageId = null;
       this.lastErrorMessageId = null;
+      this.lastCorrectionMessageId = null;
+      this.lastDiceMessageId = null;
       this.nextMessageId = 1;
     },
 
@@ -589,6 +918,16 @@ export default {
           this.messages.splice(index, 1);
         }
         this.lastErrorMessageId = null;
+      }
+    },
+
+    removeLastCorrectionMessage() {
+      if (this.lastCorrectionMessageId !== null) {
+        const index = this.messages.findIndex(m => m.id === this.lastCorrectionMessageId);
+        if (index !== -1) {
+          this.messages.splice(index, 1);
+        }
+        this.lastCorrectionMessageId = null;
       }
     },
 
@@ -636,16 +975,32 @@ export default {
       return msg;
     },
 
+    addCorrectionMessage(text) {
+      const msg = {
+        id: this.nextMessageId++,
+        type: 'ai',
+        author: 'Виртуальный мастер',
+        text: '💬 <b>Уточнение:</b><br>' + text,
+        color: '#C8A84B',
+        timestamp: Date.now()
+      };
+      this.messages.push(msg);
+      this.lastCorrectionMessageId = msg.id;
+      this.scrollToBottom();
+    },
+
     addSystemMessage(text) {
-      this.messages.push({
+      const msg = {
         id: this.nextMessageId++,
         type: 'system',
         author: '',
         text: text,
         color: '#A0B0D0',
         timestamp: Date.now()
-      });
+      };
+      this.messages.push(msg);
       this.scrollToBottom();
+      return msg;
     },
 
     addErrorMessage(text) {
@@ -663,12 +1018,14 @@ export default {
     },
 
     insertDiceRoll(dice) {
+      if (this.isInputDisabled) return;
       const roll = Math.floor(Math.random() * dice) + 1;
-      this.newMessage = `Бросаю d${dice}: ${roll}. Результат: ${roll}`;
+      this.newMessage = `Бросаю d${dice}: ${roll}`;
       this.$refs.messageInput?.focus();
     },
 
     insertEmoji(emoji) {
+      if (this.isInputDisabled) return;
       this.newMessage += ' ' + emoji;
       this.$refs.messageInput?.focus();
     },
@@ -699,6 +1056,349 @@ export default {
 </script>
 
 <style scoped>
+/* === АНИМАЦИЯ ЗДОРОВЬЯ === */
+.health-change-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 250;
+  pointer-events: none;
+}
+
+.health-change-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: healthPopup 2s ease-out forwards;
+}
+
+.health-change-indicator.heal {
+  animation: healPopup 2s ease-out forwards;
+}
+
+@keyframes healthPopup {
+  0% { transform: scale(0.3); opacity: 0; }
+  20% { transform: scale(1.2); opacity: 1; }
+  40% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1) translateY(-30px); opacity: 0; }
+}
+
+@keyframes healPopup {
+  0% { transform: scale(0.3); opacity: 0; }
+  20% { transform: scale(1.2); opacity: 1; }
+  40% { transform: scale(1); opacity: 1; }
+  60% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1) translateY(-30px); opacity: 0; }
+}
+
+.health-change-icon {
+  font-size: 56px;
+  filter: drop-shadow(0 0 20px rgba(255, 100, 100, 0.6));
+}
+
+.health-change-indicator.heal .health-change-icon {
+  filter: drop-shadow(0 0 20px rgba(100, 255, 100, 0.6));
+}
+
+.health-change-value {
+  font-size: 52px;
+  font-weight: 900;
+  font-family: 'Impact', 'Arial Black', sans-serif;
+  text-shadow: 0 0 30px rgba(255, 80, 80, 0.8), 0 4px 8px rgba(0, 0, 0, 0.6);
+  color: #FF4444;
+}
+
+.health-change-indicator.heal .health-change-value {
+  color: #44FF44;
+  text-shadow: 0 0 30px rgba(80, 255, 80, 0.8), 0 4px 8px rgba(0, 0, 0, 0.6);
+}
+
+.health-change-label {
+  font-size: 18px;
+  color: #FF8888;
+  letter-spacing: 2px;
+  font-weight: 600;
+}
+
+.health-change-indicator.heal .health-change-label {
+  color: #88FF88;
+}
+
+/* Затемнение при уроне */
+.damage-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(200, 30, 30, 0.25);
+  z-index: 100;
+  pointer-events: none;
+  animation: damageFlash 0.8s ease-out;
+}
+
+@keyframes damageFlash {
+  0% { background: rgba(200, 20, 20, 0.5); }
+  100% { background: rgba(200, 30, 30, 0); }
+}
+
+.damage-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-6px); }
+  20% { transform: translateX(6px); }
+  30% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  50% { transform: translateX(-2px); }
+  60% { transform: translateX(2px); }
+  70% { transform: translateX(0); }
+}
+
+/* === АНИМАЦИЯ БРОСКА === */
+.dice-roll-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dice-roll-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+}
+
+.dice-cube {
+  width: 150px;
+  height: 150px;
+  background: linear-gradient(145deg, #2A1A4A, #1A0A2A);
+  border: 3px solid #C8B060;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 60px rgba(200, 176, 96, 0.4), 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.dice-cube.dice-rolling {
+  animation: diceShake 0.1s infinite;
+}
+
+@keyframes diceShake {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(10deg) scale(1.05); }
+  50% { transform: rotate(-10deg) scale(1.1); }
+  75% { transform: rotate(5deg) scale(1.05); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+.dice-face {
+  font-size: 64px;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow: 0 0 30px rgba(255, 215, 0, 0.6);
+  font-family: 'Impact', 'Arial Black', sans-serif;
+}
+
+.dice-roll-text {
+  font-size: 20px;
+  color: #C8B060;
+  letter-spacing: 2px;
+  font-weight: 600;
+  animation: pulse-text 1s infinite;
+}
+
+@keyframes pulse-text {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Модальное окно результата */
+.dice-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.dice-modal {
+  background: linear-gradient(145deg, #1A2535, #0F1925);
+  border: 2px solid #C8B060;
+  border-radius: 24px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(200, 176, 96, 0.3), 0 20px 40px rgba(0, 0, 0, 0.5);
+  max-width: 420px;
+  width: 90%;
+  animation: modalPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes modalPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.dice-modal-header {
+  font-size: 20px;
+  font-weight: 700;
+  color: #C8B060;
+  letter-spacing: 2px;
+  margin-bottom: 24px;
+}
+
+.dice-result-main {
+  margin-bottom: 24px;
+}
+
+.dice-result-label {
+  font-size: 14px;
+  color: #8090B0;
+  margin-bottom: 8px;
+}
+
+.dice-result-value {
+  font-size: 80px;
+  font-weight: 900;
+  font-family: 'Impact', 'Arial Black', sans-serif;
+  text-shadow: 0 0 40px currentColor;
+}
+
+.dice-result-value.dice-success {
+  color: #5BFF5B;
+  text-shadow: 0 0 40px rgba(91, 255, 91, 0.6);
+}
+
+.dice-result-value.dice-fail {
+  color: #FF5B5B;
+  text-shadow: 0 0 40px rgba(255, 91, 91, 0.6);
+}
+
+.dice-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.dice-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: rgba(30, 40, 60, 0.5);
+  border-radius: 8px;
+  color: #A0B8D8;
+  font-size: 14px;
+}
+
+.dice-detail-row span:last-child {
+  color: #E0E8FF;
+  font-weight: 600;
+}
+
+.dice-total {
+  color: #FFD700 !important;
+  font-size: 18px;
+}
+
+.dice-verdict {
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin-top: 4px;
+}
+
+.verdict-success {
+  background: rgba(91, 255, 91, 0.15);
+  color: #5BFF5B;
+  border: 1px solid rgba(91, 255, 91, 0.3);
+  text-shadow: 0 0 20px rgba(91, 255, 91, 0.3);
+}
+
+.verdict-fail {
+  background: rgba(255, 91, 91, 0.15);
+  color: #FF5B5B;
+  border: 1px solid rgba(255, 91, 91, 0.3);
+  text-shadow: 0 0 20px rgba(255, 91, 91, 0.3);
+}
+
+.dice-close-btn {
+  margin-top: 8px;
+  padding: 14px 40px;
+  background: linear-gradient(145deg, #C8A84B, #A08830);
+  border: none;
+  border-radius: 40px;
+  color: #1A1A2E;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.3s;
+  box-shadow: 0 4px 20px rgba(200, 168, 75, 0.4);
+  width: 100%;
+}
+
+.dice-close-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(200, 168, 75, 0.6);
+  background: linear-gradient(145deg, #D8B860, #B09840);
+}
+
+.dice-close-btn span:last-child {
+  font-size: 20px;
+  transition: transform 0.3s;
+}
+
+.dice-close-btn:hover span:last-child {
+  transform: translateX(4px);
+}
+
+/* Кнопки кубиков */
+.action-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.action-btn.dice-enabled {
+  background: rgba(200, 168, 75, 0.3);
+  border-color: #C8B060;
+  color: #FFD700;
+  box-shadow: 0 0 15px rgba(200, 168, 75, 0.3);
+  animation: pulse-dice 2s infinite;
+}
+
+@keyframes pulse-dice {
+  0%, 100% { box-shadow: 0 0 15px rgba(200, 168, 75, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(200, 168, 75, 0.6); }
+}
+
 /* === ОСНОВНОЕ === */
 .game-container {
   min-height: 100vh;
@@ -835,6 +1535,33 @@ export default {
 .player-role { font-size: 12px; color: #8090B0; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-indicator { color: #7B6FB0; font-size: 16px; flex-shrink: 0; }
 
+/* Здоровье */
+.health-panel {
+  background: rgba(20, 30, 50, 0.6); border: 1px solid #3A4A6A;
+  border-radius: 12px; padding: 12px;
+}
+.health-title {
+  color: #BE5B5B; font-size: 12px; font-weight: 600;
+  letter-spacing: 1.5px; margin-bottom: 10px;
+}
+.health-bar-container {
+  width: 100%; height: 14px; background: #1A2535;
+  border-radius: 10px; overflow: hidden; margin-bottom: 8px;
+}
+.health-bar {
+  height: 100%; border-radius: 10px; transition: width 0.5s ease;
+}
+.health-good { background: linear-gradient(90deg, #5B9E6B, #7BC87B); }
+.health-medium { background: linear-gradient(90deg, #C8A84B, #D8C870); }
+.health-low { background: linear-gradient(90deg, #C85B4B, #E0705B); animation: pulse-health 1s infinite; }
+@keyframes pulse-health {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.health-text {
+  color: #A0B0C0; font-size: 11px; text-align: center;
+}
+
 /* Инвентарь */
 .inventory-panel {
   background: rgba(20, 30, 50, 0.6); border: 1px solid #3A4A6A;
@@ -952,7 +1679,7 @@ export default {
   background: linear-gradient(to top, rgba(11, 16, 28, 0.95), rgba(11, 16, 28, 0.7));
   border-top: 1px solid #2A3550;
 }
-.input-actions { display: flex; gap: 6px; margin-bottom: 12px; }
+.input-actions { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .action-btn {
   display: flex; align-items: center; gap: 4px;
   background: rgba(30, 40, 60, 0.6); border: 1px solid #3A4A6A;
@@ -978,9 +1705,12 @@ export default {
   flex: 1; background: transparent; border: none;
   padding: 12px 4px; color: #E8F0FF; font-size: 14px; outline: none; min-width: 0;
 }
+.message-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .message-input::placeholder { color: #607090; font-weight: 300; }
 .char-counter { color: #607090; font-size: 10px; padding: 0 6px; }
-.char-counter.char-limit { color: #6B9E7A; font-weight: 600; }
 .clear-btn {
   width: 28px; height: 28px; border-radius: 50%;
   background: rgba(100, 100, 140, 0.2); border: none;

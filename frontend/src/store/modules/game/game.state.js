@@ -1,13 +1,14 @@
 import axios from "axios";
 import { Game } from '@/store/models/Game';
-import { Gamers } from "@/store/models/Gamers.js";
+import {Gamers, Health} from "@/store/models/Gamers.js";
 import { Action } from "@/store/models/Action.js";
+import { Dice } from "@/store/models/Dice.js";
 
 const state = {
     game: null,
     gamer: null,
-    actions: null
-
+    actions: null,
+    dice: null
 }
 
 const getters = {
@@ -19,6 +20,9 @@ const getters = {
     },
     ACTIONS: state => {
         return state.actions
+    },
+    DICE: state => {
+        return state.dice
     }
 }
 
@@ -34,7 +38,12 @@ const mutations = {
     },
     setAction(state, data) {
         state.gamer.inventory = data.inventory
+        state.gamer.setHealthData(new Health(data.health))
         state.actions = new Action(data)
+    },
+    setDice(state, data) {
+        state.actions = new Action(data.continue)
+        state.dice = new Dice(data)
     }
 }
 
@@ -86,6 +95,20 @@ const actions = {
                 }
             })
         commit('setAction', response.data.data)
+    },
+
+    async dice({commit}, data) {
+        const response = await axios.post('/api/v1/actions/roll-dice',
+            {
+                gamer_id: data.gamer_id,
+                cube: data.cube
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+        commit('setDice', response.data.data)
     },
 }
 
