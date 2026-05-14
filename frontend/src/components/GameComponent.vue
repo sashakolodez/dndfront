@@ -41,7 +41,7 @@
           <div class="game-end-title">{{ gameEndIsVictory ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ' }}</div>
           <div class="game-end-text">{{ gameEndMessage }}</div>
           <div class="game-end-divider"></div>
-          <button class="game-end-btn" @click="goToHome()">
+          <button class="game-end-btn" @click="goToHome">
             <span>НА ГЛАВНУЮ</span>
             <span class="game-end-arrow">➤</span>
           </button>
@@ -490,6 +490,32 @@
           </div>
         </div>
       </main>
+
+      <!-- Правая панель: враги -->
+      <aside class="enemies-panel" v-if="showEnemiesPanel">
+        <div class="enemies-header">
+          <div class="enemies-title">
+            <span>⚔️</span>
+            <span>ВРАГИ</span>
+            <span class="enemy-count">{{ enemies.length }}</span>
+          </div>
+        </div>
+        <div class="enemies-list">
+          <div v-for="enemy in enemies" :key="enemy.name" class="enemy-card">
+            <div class="enemy-avatar">👹</div>
+            <div class="enemy-info">
+              <div class="enemy-name">{{ enemy.name }}</div>
+              <div class="enemy-hp-bar-container">
+                <div class="enemy-hp-bar" :style="{ width: getEnemyHealthPercent(enemy) + '%' }" :class="getEnemyHealthStatus(enemy)"></div>
+              </div>
+              <div class="enemy-stats">
+                <span class="enemy-hp">❤️ {{ enemy.health }}/{{ enemy.maxHealth }}</span>
+                <span class="enemy-armor" v-if="enemy.armor">🛡️ {{ enemy.armor }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
 </template>
@@ -541,6 +567,10 @@ export default {
       showGameEndModal: false,
       gameEndIsVictory: false,
       gameEndMessage: '',
+
+      // Враги
+      showEnemiesPanel: false,
+      enemies: [],
 
       messages: [],
       nextMessageId: 1,
@@ -694,6 +724,34 @@ export default {
       if (percent > 60) return 'health-good';
       if (percent > 25) return 'health-medium';
       return 'health-low';
+    },
+
+    getEnemyHealthPercent(enemy) {
+      if (!enemy || !enemy.maxHealth) return 0;
+      return Math.round((enemy.health / enemy.maxHealth) * 100);
+    },
+
+    getEnemyHealthStatus(enemy) {
+      const percent = this.getEnemyHealthPercent(enemy);
+      if (percent > 60) return 'health-good';
+      if (percent > 25) return 'health-medium';
+      return 'health-low';
+    },
+
+    updateEnemies(battleData) {
+      if (!battleData) {
+        this.enemies = [];
+        this.showEnemiesPanel = false;
+        return;
+      }
+
+      if (battleData.isActive && battleData.enemies && battleData.enemies.length > 0) {
+        this.enemies = battleData.enemies;
+        this.showEnemiesPanel = true;
+      } else {
+        this.enemies = [];
+        this.showEnemiesPanel = false;
+      }
     },
 
     isSlotAvailable(level) {
@@ -891,8 +949,7 @@ export default {
         return;
       }
 
-      this.removeLastCorrectionMessage();
-
+      // НЕ удаляем сообщения при инициализации
       this.addPlayerMessage({ id: player.id, name: 'Игрок', avatar: '?', color: '#5B8CBE' }, text);
 
       this.isAITyping = true;
@@ -1021,7 +1078,6 @@ export default {
 
       this.addPlayerMessage(player, text, true);
 
-      // Удаляем старые сообщения если больше 10
       while (this.messages.length > 10) {
         this.messages.splice(0, 2);
       }
@@ -1046,6 +1102,11 @@ export default {
 
         if (actionsData && actionsData.reaction) {
           this.addAIMessage(actionsData.reaction, false, true);
+        }
+
+        // Обновление врагов при каждом действии
+        if (actionsData && actionsData.battle !== undefined) {
+          this.updateEnemies(actionsData.battle);
         }
 
         this.checkDiceRequirement();
@@ -2707,6 +2768,188 @@ export default {
 .input-hint { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; color: #506080; font-size: 10px; }
 .hint-icon { font-size: 12px; }
 .hint-separator { opacity: 0.3; }
+
+/* === ПРАВАЯ ПАНЕЛЬ: ВРАГИ === */
+.enemies-panel {
+  width: 240px;
+  background: rgba(8, 12, 20, 0.85);
+  backdrop-filter: blur(12px);
+  border-left: 1px solid #2A3550;
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 10;
+  overflow-y: auto;
+  animation: slideInRight 0.4s ease;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.enemies-header {
+  margin-bottom: 4px;
+}
+
+.enemies-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #E08060;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3A2020;
+}
+
+.enemy-count {
+  margin-left: auto;
+  background: #2A1010;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: #E08060;
+}
+
+.enemies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.enemy-card {
+  background: linear-gradient(145deg, #1A0A0A, #0F0505);
+  border: 1px solid #3A1515;
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.enemy-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at top right, rgba(200, 60, 30, 0.08), transparent 50%);
+  pointer-events: none;
+}
+
+.enemy-card:hover {
+  border-color: #5A2020;
+  box-shadow: 0 0 20px rgba(200, 60, 30, 0.15);
+  transform: translateY(-1px);
+}
+
+.enemy-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(200, 60, 30, 0.15);
+  border: 1px solid #5A2020;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.enemy-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.enemy-name {
+  font-weight: 600;
+  color: #E0A080;
+  font-size: 14px;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.enemy-hp-bar-container {
+  width: 100%;
+  height: 6px;
+  background: #1A0A0A;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.enemy-hp-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.enemy-hp-bar.health-good { background: linear-gradient(90deg, #8B3A3A, #C85B4B); }
+.enemy-hp-bar.health-medium { background: linear-gradient(90deg, #C8704B, #E0805B); }
+.enemy-hp-bar.health-low { background: linear-gradient(90deg, #C83A2B, #E04030); animation: enemyPulse 1s infinite; }
+
+@keyframes enemyPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.enemy-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+}
+
+.enemy-hp {
+  color: #C86050;
+  font-weight: 600;
+}
+
+.enemy-armor {
+  color: #B0A080;
+  font-weight: 600;
+}
+
+/* Адаптивность для врагов */
+@media (max-width: 900px) {
+  .enemies-panel {
+    width: 200px;
+    padding: 14px 10px;
+  }
+  .enemy-card {
+    padding: 10px;
+  }
+  .enemy-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+  }
+  .enemy-name {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .enemies-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 240px;
+    transform: translateX(100%);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+    border-left: 1px solid #3A4A6A;
+    z-index: 25;
+  }
+}
 
 /* === АДАПТИВНОСТЬ === */
 @media (max-width: 768px) {
