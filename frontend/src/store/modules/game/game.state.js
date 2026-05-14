@@ -110,6 +110,29 @@ const actions = {
             })
         commit('setDice', response.data.data)
     },
+
+    async startBattle({commit}, gameId) {
+        const response = await axios.post(`/api/v1/games/${gameId}/start-battle`, {},
+            {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+        return response.data.data
+    },
+
+    async npcAction({commit}, data) {
+        const response = await axios.post(`/api/v1/actions/npc`, {
+            game_id: data.gameId,
+            npc_id: data.npcId
+        },
+            {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+        return response.data.data
+    },
 }
 
 export default {

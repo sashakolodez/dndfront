@@ -32,6 +32,58 @@
       </div>
     </div>
 
+    <!-- Экран загрузки начала боя -->
+    <div class="battle-loading-overlay" v-if="isBattleLoading">
+      <div class="battle-loading-content">
+        <div class="battle-loading-icon">⚔️</div>
+        <div class="battle-loading-title">НАЧАЛО БОЯ</div>
+        <div class="battle-loading-text">Ожидаем результаты бросков инициативы...</div>
+        <div class="battle-loading-spinner"></div>
+      </div>
+    </div>
+
+    <!-- Модальное окно инициативы -->
+    <div class="initiative-modal-overlay" v-if="showInitiativeModal" @click="closeInitiativeModal">
+      <div class="initiative-modal" @click.stop>
+        <div class="initiative-modal-header">
+          <span>⚔️</span>
+          <span>НАЧАЛО БОЯ</span>
+          <span>⚔️</span>
+        </div>
+        <div class="initiative-subtitle">Порядок инициативы</div>
+        <div class="initiative-list">
+          <div
+            v-for="(item, index) in initiativeResults"
+            :key="item.id"
+            class="initiative-item"
+            :class="{ 'initiative-first': index === 0, 'initiative-player': item.unit_type === 'gamer', 'initiative-npc': item.unit_type === 'nps' }"
+          >
+            <div class="initiative-position">{{ index + 1 }}</div>
+            <div class="initiative-avatar">{{ item.unit_type === 'gamer' ? '🧙' : '👹' }}</div>
+            <div class="initiative-info">
+              <div class="initiative-name">{{ item.name }}</div>
+              <div class="initiative-type">{{ item.unit_type === 'gamer' ? 'Игрок' : 'Противник' }}</div>
+            </div>
+            <div class="initiative-roll">
+              <div class="initiative-dice">
+                <span class="dice-label">Бросок</span>
+                <span class="dice-value">{{ item.roll_dice }}</span>
+              </div>
+              <div class="initiative-bonus" v-if="item.bonus">
+                <span class="bonus-label">+{{ item.bonus }}</span>
+                <span class="bonus-stat">({{ getStatName(item.bonus_stat) }})</span>
+              </div>
+              <div class="initiative-total">{{ item.roll_dice + (item.bonus || 0) }}</div>
+            </div>
+          </div>
+        </div>
+        <button class="initiative-close-btn" @click="closeInitiativeModal">
+          <span>НАЧАТЬ БОЙ</span>
+          <span>➤</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Модальное окно окончания игры -->
     <div class="game-end-overlay" v-if="showGameEndModal">
       <div class="game-end-modal" :class="{ 'victory': gameEndIsVictory, 'defeat': !gameEndIsVictory }">
@@ -136,9 +188,17 @@
         <span class="logo-icon">◈</span>
         <span class="logo-text">MAUPORIA</span>
       </div>
-      <div class="master-status">
-        <span class="pulse-dot"></span>
-        <span class="status-text">МАСТЕР · АКТИВЕН</span>
+      <div class="master-status" :class="{ 'battle-active': isBattleActive }">
+        <template v-if="isBattleActive">
+          <span class="battle-indicator">⚔️</span>
+          <span class="status-text" v-if="isPlayerTurn && waitingForPlayerAction">ХОД: {{ getCurrentTurnName() }}</span>
+          <span class="status-text" v-else-if="isNPCTurn">ХОД ПРОТИВНИКА</span>
+          <span class="status-text" v-else>БОЙ</span>
+        </template>
+        <template v-else>
+          <span class="pulse-dot"></span>
+          <span class="status-text">МАСТЕР · АКТИВЕН</span>
+        </template>
       </div>
       <button class="leave-btn" @click="leaveGame">
         <span class="leave-text">ВЫЙТИ</span>
@@ -360,6 +420,11 @@
               <span>Виртуальный мастер печатает</span>
               <span class="dots">...</span>
             </div>
+
+            <div v-if="isNPCTyping" class="typing-indicator typing-npc">
+              <span>{{ npcTypingName }} делает свой ход</span>
+              <span class="dots">...</span>
+            </div>
           </div>
 
           <div class="chat-input-area">
@@ -572,6 +637,19 @@ export default {
       showEnemiesPanel: false,
       enemies: [],
 
+      // Бой
+      isBattleActive: false,
+      isBattleLoading: false,
+      battleOrder: [],
+      currentTurnIndex: 0,
+      showInitiativeModal: false,
+      initiativeResults: [],
+      isPlayerTurn: false,
+      isNPCTurn: false,
+      waitingForPlayerAction: false,
+      isNPCTyping: false,
+      npcTypingName: '',
+
       messages: [],
       nextMessageId: 1,
       lastPlayerMessageId: null,
@@ -745,12 +823,216 @@ export default {
         return;
       }
 
+      // Проверяем начало боя
+      const wasBattleActive = this.isBattleActive;
+      this.isBattleActive = battleData.isActive;
+
       if (battleData.isActive && battleData.enemies && battleData.enemies.length > 0) {
         this.enemies = battleData.enemies;
         this.showEnemiesPanel = true;
+
+        // Если бой только начался (был неактивен, стал активен)
+        if (!wasBattleActive && battleData.isActive) {
+          this.handleBattleStart();
+        }
       } else {
         this.enemies = [];
         this.showEnemiesPanel = false;
+      }
+    },
+
+    getStatName(stat) {
+      const statNames = {
+        strength: 'Сила',
+        dexterity: 'Ловкость',
+        constitution: 'Телосложение',
+        intelligence: 'Интеллект',
+        wisdom: 'Мудрость',
+        charisma: 'Харизма'
+      };
+      return statNames[stat] || stat;
+    },
+
+    getCurrentTurnName() {
+      if (this.currentTurnIndex >= this.battleOrder.length) return '';
+      const currentUnit = this.battleOrder[this.currentTurnIndex];
+      return currentUnit ? currentUnit.name : '';
+    },
+
+    async handleBattleStart() {
+      // Вызываем API start-battle для получения результатов инициативы
+      const gameData = this.$store.getters.GAME;
+      if (!gameData || !gameData.id) return;
+
+      // Показываем экран загрузки и блокируем ввод
+      this.isBattleLoading = true;
+      this.isInputDisabled = true;
+
+      try {
+        const battleData = await this.$store.dispatch('startBattle', gameData.id);
+        
+        this.isBattleLoading = false;
+
+        if (battleData && battleData.roll_dices && battleData.roll_dices.length > 0) {
+          // Сортируем по общему результату (roll_dice + bonus) по убыванию
+          const sortedResults = [...battleData.roll_dices].sort((a, b) => {
+            const totalA = a.roll_dice + (a.bonus || 0);
+            const totalB = b.roll_dice + (b.bonus || 0);
+            return totalB - totalA;
+          });
+
+          this.initiativeResults = sortedResults;
+          this.battleOrder = sortedResults.map(item => ({
+            id: item.id,
+            name: item.name,
+            unitType: item.unit_type,
+            rollDice: item.roll_dice,
+            bonus: item.bonus || 0,
+            total: item.roll_dice + (item.bonus || 0)
+          }));
+
+          // Показываем модалку с инициативой
+          this.showInitiativeModal = true;
+        } else {
+          // Если нет данных - разблокируем ввод
+          this.isInputDisabled = false;
+        }
+      } catch (err) {
+        this.isBattleLoading = false;
+        this.isInputDisabled = false;
+        console.error('Ошибка при начале боя:', err);
+        this.addErrorMessage('Не удалось начать бой.');
+      }
+    },
+
+    closeInitiativeModal() {
+      this.showInitiativeModal = false;
+      this.isInputDisabled = false;
+       
+      // Начинаем первый ход
+      if (this.battleOrder.length > 0) {
+        this.currentTurnIndex = 0;
+        this.processTurn();
+      }
+    },
+
+    processTurn() {
+      if (this.currentTurnIndex >= this.battleOrder.length) {
+        this.currentTurnIndex = 0;
+      }
+
+      const currentUnit = this.battleOrder[this.currentTurnIndex];
+      if (!currentUnit) return;
+
+      if (currentUnit.unitType === 'gamer') {
+        // Ход игрока
+        this.isPlayerTurn = true;
+        this.isNPCTurn = false;
+        this.waitingForPlayerAction = true;
+        
+        // Делаем этого игрока активным
+        const player = this.players.find(p => p.id === currentUnit.id);
+        if (player) {
+          this.currentPlayerId = player.id;
+          this.selectedPlayer = player;
+          this.updateHealthInfo(player);
+        }
+      } else {
+        // Ход НПС
+        this.isPlayerTurn = false;
+        this.isNPCTurn = true;
+        this.waitingForPlayerAction = false;
+        
+        // Вызываем API для НПС
+        this.executeNPCTurn();
+      }
+    },
+
+    async executeNPCTurn() {
+      try {
+        const currentUnit = this.battleOrder[this.currentTurnIndex];
+        
+        // Показываем индикатор хода НПС
+        this.isNPCTyping = true;
+        this.npcTypingName = currentUnit ? currentUnit.name : 'Противник';
+        
+        const npcData = await this.$store.dispatch('npcAction', {
+          gameId: this.$store.getters.GAME.id,
+          npcId: currentUnit ? currentUnit.id : null
+        });
+        
+        this.isNPCTyping = false;
+        
+        if (npcData) {
+          // Выводим действие в чат
+          if (npcData.action) {
+            this.addAIMessage(npcData.action, false, true);
+          }
+
+          // Если есть урон - наносим его
+          if (npcData.damage > 0 && npcData.gamer_id) {
+            const playerIndex = this.players.findIndex(p => p.id === npcData.gamer_id);
+            if (playerIndex !== -1) {
+              const currentHealth = this.players[playerIndex].health || 0;
+              this.players[playerIndex].health = Math.max(0, currentHealth - npcData.damage);
+              
+              // Показываем эффект урона
+              this.showHealthChangeEffect(-npcData.damage);
+
+              // Обновляем выбранного игрока если это он
+              if (this.selectedPlayer && this.selectedPlayer.id === npcData.gamer_id) {
+                this.selectedPlayer = { ...this.players[playerIndex] };
+                this.updateHealthInfo(this.players[playerIndex]);
+              }
+            }
+          }
+
+          // Проверяем требование броска кубика после действия НПС
+          this.checkDiceRequirement();
+
+          // Переходим к следующему ходу после небольшой задержки
+          setTimeout(() => {
+            this.nextTurn();
+          }, 1000);
+        }
+      } catch (err) {
+        this.isNPCTyping = false;
+        console.error('Ошибка при выполнении хода НПС:', err);
+        this.addErrorMessage('Ошибка при ходе противника.');
+        this.nextTurn();
+      }
+    },
+
+    nextTurn() {
+      this.currentTurnIndex++;
+      if (this.currentTurnIndex >= this.battleOrder.length) {
+        this.currentTurnIndex = 0;
+      }
+      this.processTurn();
+    },
+
+    // Переопределяем selectPlayer для учета очереди боя
+    selectPlayer(playerId) {
+      // Если идет бой и сейчас ход игрока, проверяем можно ли выбрать игрока
+      if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
+        const currentUnit = this.battleOrder[this.currentTurnIndex];
+        if (currentUnit && currentUnit.unitType === 'gamer') {
+          // Можно выбрать только активного игрока
+          if (currentUnit.id !== playerId) {
+            return; // Нельзя выбрать другого игрока
+          }
+        }
+      }
+
+      const player = this.players.find(p => p.id === playerId);
+      if (!player) return;
+
+      this.currentPlayerId = playerId;
+      this.selectedPlayer = player;
+      this.updateHealthInfo(player);
+
+      if (window.innerWidth <= 768) {
+        this.closePlayersPanel();
       }
     },
 
@@ -873,7 +1155,7 @@ export default {
 
       try {
         const form = {
-          gamer_id: this.requiredDice.gamerId,
+          gamer_id: this.currentPlayerId,
           cube: cube
         };
         await this.$store.dispatch('dice', form);
@@ -968,11 +1250,36 @@ export default {
       }
 
       this.checkDiceRequirement();
+
+      // Если идет бой и игрок сделал бросок - проверяем требуется ли еще бросок
+      if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
+        const actionsAfterCheck = this.$store.getters.ACTIONS;
+        if (!actionsAfterCheck || !actionsAfterCheck.requiredRollOfDice) {
+          // Больше бросков не требуется - переключаем ход
+          this.waitingForPlayerAction = false;
+          this.isPlayerTurn = false;
+          
+          setTimeout(() => {
+            this.nextTurn();
+          }, 500);
+        }
+      }
     },
 
     async sendMessage() {
       const text = this.newMessage.trim();
       if (!text || this.isAITyping || this.isInputDisabled) return;
+
+      // Проверка: во время боя можно отправлять сообщения только активному игроку
+      if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
+        const currentUnit = this.battleOrder[this.currentTurnIndex];
+        if (currentUnit && currentUnit.unitType === 'gamer') {
+          if (currentUnit.id !== this.currentPlayerId) {
+            this.addErrorMessage('Сейчас ход другого игрока. Дождитесь своей очереди!');
+            return;
+          }
+        }
+      }
 
       this.newMessage = '';
 
@@ -1155,6 +1462,22 @@ export default {
         }
 
         this.checkDiceRequirement();
+
+        // Если идет бой и игрок сделал действие без требования броска - переключаем ход
+        if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
+          // Проверяем, был ли требуем бросок
+          const actionsAfterCheck = this.$store.getters.ACTIONS;
+          if (!actionsAfterCheck || !actionsAfterCheck.requiredRollOfDice) {
+            // Бросок не требуется - переключаем ход
+            this.waitingForPlayerAction = false;
+            this.isPlayerTurn = false;
+            
+            // Небольшая задержка перед переходом к следующему
+            setTimeout(() => {
+              this.nextTurn();
+            }, 500);
+          }
+        }
 
         const playerIndex = this.players.findIndex(p => p.id === player.id);
 
@@ -1713,6 +2036,277 @@ export default {
   0% { transform: scale(0.6); opacity: 0; }
   60% { transform: scale(1.05); opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
+}
+
+/* === ЭКРАН ЗАГРУЗКИ НАЧАЛА БОЯ === */
+.battle-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(16px);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.battle-loading-content {
+  text-align: center;
+  padding: 48px;
+}
+
+.battle-loading-icon {
+  font-size: 80px;
+  margin-bottom: 24px;
+  animation: battleIconPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes battleIconPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.8; }
+}
+
+.battle-loading-title {
+  font-size: 32px;
+  font-weight: 800;
+  color: #FF6060;
+  letter-spacing: 4px;
+  margin-bottom: 16px;
+  text-shadow: 0 0 40px rgba(255, 80, 80, 0.5);
+}
+
+.battle-loading-text {
+  font-size: 16px;
+  color: #A0A8B8;
+  margin-bottom: 32px;
+}
+
+.battle-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 100, 100, 0.2);
+  border-top-color: #FF6060;
+  border-radius: 50%;
+  margin: 0 auto;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* === МОДАЛКА ИНИЦИАТИВЫ === */
+.initiative-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  z-index: 350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.4s ease;
+}
+
+.initiative-modal {
+  background: linear-gradient(160deg, #1A1A2E, #0F0F1A);
+  border: 2px solid rgba(100, 180, 255, 0.3);
+  border-radius: 24px;
+  padding: 32px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: initiativePop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 0 60px rgba(80, 140, 255, 0.2), 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes initiativePop {
+  0% { transform: scale(0.7); opacity: 0; }
+  60% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.initiative-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 22px;
+  font-weight: 800;
+  color: #60B0FF;
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+  text-shadow: 0 0 30px rgba(80, 160, 255, 0.5);
+}
+
+.initiative-subtitle {
+  text-align: center;
+  color: #8090A0;
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.initiative-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.initiative-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  transition: all 0.3s;
+}
+
+.initiative-item.initiative-first {
+  background: rgba(255, 200, 80, 0.1);
+  border-color: rgba(255, 180, 60, 0.4);
+  box-shadow: 0 0 20px rgba(255, 180, 60, 0.15);
+}
+
+.initiative-item.initiative-player {
+  border-left: 3px solid #5B8CBE;
+}
+
+.initiative-item.initiative-npc {
+  border-left: 3px solid #BE5B5B;
+}
+
+.initiative-position {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 14px;
+  color: #A0B0C0;
+}
+
+.initiative-first .initiative-position {
+  background: linear-gradient(145deg, #FFB040, #FF8000);
+  color: #1A1A2E;
+}
+
+.initiative-avatar {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  font-size: 24px;
+}
+
+.initiative-info {
+  flex: 1;
+}
+
+.initiative-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: #E0E8F0;
+  margin-bottom: 2px;
+}
+
+.initiative-type {
+  font-size: 12px;
+  color: #708090;
+}
+
+.initiative-roll {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.initiative-dice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.dice-label {
+  font-size: 10px;
+  color: #607080;
+  text-transform: uppercase;
+}
+
+.dice-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #A0B8D8;
+}
+
+.initiative-bonus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.bonus-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #40C080;
+}
+
+.bonus-stat {
+  font-size: 10px;
+  color: #607080;
+}
+
+.initiative-total {
+  min-width: 40px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 800;
+  color: #60B0FF;
+  padding: 6px 10px;
+  background: rgba(80, 160, 255, 0.1);
+  border-radius: 8px;
+}
+
+.initiative-first .initiative-total {
+  background: rgba(255, 180, 60, 0.2);
+  color: #FFB040;
+}
+
+.initiative-close-btn {
+  padding: 14px 40px;
+  background: linear-gradient(145deg, #3060A0, #204080);
+  border: 1px solid rgba(80, 140, 255, 0.4);
+  border-radius: 40px;
+  color: #E0F0FF;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.3s;
+  box-shadow: 0 4px 20px rgba(40, 80, 160, 0.3);
+  width: 100%;
+}
+
+.initiative-close-btn:hover {
+  background: linear-gradient(145deg, #4080D0, #3060A0);
+  border-color: rgba(100, 160, 255, 0.6);
+  color: #FFFFFF;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(60, 100, 200, 0.4);
 }
 
 /* === АНИМАЦИЯ ЗДОРОВЬЯ === */
@@ -2610,6 +3204,22 @@ export default {
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
+.master-status.battle-active {
+  background: rgba(180, 60, 60, 0.25);
+  border-color: rgba(255, 80, 80, 0.4);
+  color: #FFB0B0;
+}
+
+.battle-indicator {
+  font-size: 14px;
+  animation: battlePulse 1s infinite;
+}
+
+@keyframes battlePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
 .leave-btn {
   display: flex; align-items: center; gap: 6px;
   background: transparent; border: 1px solid #5A5A7A;
@@ -2735,6 +3345,12 @@ export default {
 }
 .dots { font-size: 18px; letter-spacing: 2px; animation: blink 1.4s infinite; }
 @keyframes blink { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+.typing-npc {
+  background: rgba(80, 40, 40, 0.3);
+  border: 1px solid rgba(180, 80, 80, 0.3);
+  color: #E08080;
+}
 
 /* === ПОЛЕ ВВОДА === */
 .chat-input-area {
