@@ -16,7 +16,7 @@
           <span class="brand-text">MAUPORIA</span>
         </div>
         <div class="nav-links">
-          <span><i class="fas fa-globe"></i> Миры</span>
+          <span @click="clickWorlds()"><i class="fas fa-globe"></i> Миры</span>
           <span><i class="fas fa-robot"></i> Нейромастер</span>
           <span><i class="fas fa-scroll"></i> Сюжеты</span>
           <span><i class="fas fa-users"></i> Гильдия</span>
@@ -162,7 +162,9 @@ export default {
 
       this.$router.push('/form')
     },
-
+    clickWorlds() {
+      this.$router.push('/worlds')
+    },
     refreshStory() {
       const randomIndex = Math.floor(Math.random() * this.storyIdeas.length);
       this.activeStoryMessage = this.storyIdeas[randomIndex];

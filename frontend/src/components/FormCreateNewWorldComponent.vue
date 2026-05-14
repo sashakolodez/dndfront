@@ -248,7 +248,7 @@ export default {
         await new Promise(resolve => setTimeout(resolve, 300))
 
         // Переходим на страницу игры
-        this.$router.push('/game')
+        this.$router.push(`${this.$store.getters.GAME.id}/game`)
 
       } catch (error) {
         console.error('Ошибка создания игры:', error)

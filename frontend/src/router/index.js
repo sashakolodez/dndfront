@@ -3,6 +3,7 @@ import MainComponent from "@/components/MainComponent.vue";
 import FormCreateNewWorldComponent from "@/components/FormCreateNewWorldComponent.vue";
 import RegistrationComponent from "@/components/RegistrationComponent.vue";
 import GameComponent from "@/components/GameComponent.vue";
+import WorldsComponent from "@/components/WorldsComponent.vue";
 
 export default createRouter({
     history:createWebHistory(),
@@ -20,8 +21,12 @@ export default createRouter({
             component: RegistrationComponent
         },
         {
-            path: '/game',
+            path: '/:uuid/game',
             component: GameComponent
+        },
+        {
+            path: '/worlds',
+            component: WorldsComponent
         }
     ]
 })
