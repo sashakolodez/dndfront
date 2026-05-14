@@ -7,6 +7,14 @@ export class Gamers {
         this.stats = new Stats(data.stats) || []
         this.health = data.health
         this.maxHealth = data.max_health || 0
+        this.armor = data.armor || 0
+        this.spellSlots = data.spell_slots
+        this.spells = []
+        if (data.spells && Array.isArray(data.spells) && data.spells !== []) {
+            for (let i = 0; i < data.spells.length; i++) {
+                this.spells.push(new Spell(data.spells[i]))
+            }
+        }
         this.correction = data.correction || null
         this.inventory = []
         if (data.inventory && Array.isArray(data.inventory)) {
@@ -47,5 +55,23 @@ export class Health {
         this.modification = data.modification || null
         this.current = data.current || 0
         this.max = data.max
+    }
+}
+
+export class Spell {
+    constructor(data) {
+        this.id = data.id
+        this.title = data.title
+        this.description = data.description
+        this.level = data.level
+    }
+}
+
+export class SpellSlots {
+    constructor(data) {
+        this.one = data.one || []
+        this.two = data.two || []
+        this.three = data.three || []
+        this.four = data.four || []
     }
 }

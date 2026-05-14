@@ -13,6 +13,42 @@
     <!-- Затемнение при уроне -->
     <div class="damage-overlay" v-if="isTakingDamage && healthChangeType === 'damage'"></div>
 
+    <!-- Модальное окно ошибки -->
+    <div class="error-modal-overlay" v-if="showErrorModal" @click="closeErrorModal">
+      <div class="error-modal" @click.stop>
+        <div class="error-modal-border"></div>
+        <div class="error-modal-content">
+          <div class="error-modal-icon-container">
+            <div class="error-modal-icon">⚠️</div>
+          </div>
+          <div class="error-modal-title">Внимание!</div>
+          <div class="error-modal-text">{{ errorMessage }}</div>
+          <div class="error-modal-divider"></div>
+          <button class="error-close-btn" @click="closeErrorModal">
+            <span>ПОНЯТНО</span>
+            <span class="error-btn-arrow">➤</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно окончания игры -->
+    <div class="game-end-overlay" v-if="showGameEndModal">
+      <div class="game-end-modal" :class="{ 'victory': gameEndIsVictory, 'defeat': !gameEndIsVictory }">
+        <div class="game-end-glow"></div>
+        <div class="game-end-content">
+          <div class="game-end-icon">{{ gameEndIsVictory ? '🏆' : '💀' }}</div>
+          <div class="game-end-title">{{ gameEndIsVictory ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ' }}</div>
+          <div class="game-end-text">{{ gameEndMessage }}</div>
+          <div class="game-end-divider"></div>
+          <button class="game-end-btn" @click="goToHome()">
+            <span>НА ГЛАВНУЮ</span>
+            <span class="game-end-arrow">➤</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Анимация броска кубика -->
     <div class="dice-roll-overlay" v-if="showDiceRoll">
       <div class="dice-roll-container">
@@ -62,6 +98,33 @@
       </div>
     </div>
 
+    <!-- Окно скиллов -->
+    <div class="spells-modal-overlay" v-if="showSpellsModal" @click="closeSpellsModal">
+      <div class="spells-modal" @click.stop>
+        <div class="spells-modal-header">
+          <span>📜 Скиллы {{ selectedSpellLevel }} уровня ({{ currentLevelSpells.length }})</span>
+          <button class="spells-close-btn" @click="closeSpellsModal">✕</button>
+        </div>
+        <div class="spells-list" v-if="currentLevelSpells.length > 0">
+          <div
+              v-for="spell in currentLevelSpells"
+              :key="spell.id"
+              class="spell-card"
+              @click="useSpell(spell)"
+          >
+            <div class="spell-card-header">
+              <span class="spell-title">{{ spell.title }}</span>
+              <span class="spell-level">Ур. {{ spell.level }}</span>
+            </div>
+            <div class="spell-description">{{ spell.description }}</div>
+          </div>
+        </div>
+        <div class="spells-empty" v-else>
+          <span>🔒 Нет доступных скиллов этого уровня</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Фон -->
     <div class="grid-overlay"></div>
     <div class="glow-orb glow-orb-1"></div>
@@ -99,79 +162,139 @@
           <button class="panel-close" @click="closePlayersPanel">✕</button>
         </div>
 
-        <div class="players-list">
+        <!-- Компактный список игроков -->
+        <div class="players-compact-list">
           <div
               v-for="(player, index) in players"
               :key="player.id"
-              class="player-item"
-              :class="{
-                'is-current': player.id === currentPlayerId,
-                'is-initialized': player.name
-              }"
+              class="player-compact-item"
+              :class="{ 'is-current': player.id === currentPlayerId, 'is-initialized': player.name }"
               @click="selectPlayer(player.id)"
           >
-            <div class="player-avatar" :style="{ background: player.color || '#666' }">
+            <div class="player-compact-avatar" :style="{ background: player.color || '#666' }">
               {{ player.avatar || '?' }}
             </div>
-            <div class="player-info">
-              <div class="player-name">{{ player.name || 'Игрок ' + (index + 1) }}</div>
-              <div class="player-role">
-                {{ player.name ? (player.character || 'Без класса') : 'Не создан' }}
+            <div class="player-compact-info">
+              <div class="player-compact-name">{{ player.name || 'Игрок ' + (index + 1) }}</div>
+              <div class="player-compact-bars" v-if="player.name && player.maxHealth">
+                <div class="mini-hp-bar">
+                  <div class="mini-hp-fill" :style="{ width: getPlayerHealthPercent(player) + '%' }" :class="getPlayerHealthStatus(player)"></div>
+                </div>
               </div>
+            </div>
+            <div class="player-compact-stats">
+              <span class="compact-hp" v-if="player.name">❤️ {{ player.health || 0 }}</span>
             </div>
             <div class="player-indicator" v-if="player.id === currentPlayerId">▼</div>
           </div>
         </div>
 
-        <!-- Здоровье выбранного игрока -->
-        <div class="health-panel" v-if="selectedPlayer && selectedPlayerMaxHealth > 0">
-          <div class="health-title">❤️ Здоровье</div>
-          <div class="health-bar-container">
-            <div class="health-bar" :style="{ width: healthPercent + '%' }" :class="healthStatus"></div>
+        <!-- Детальная информация только для выбранного инициализированного игрока -->
+        <div class="player-details" v-if="selectedPlayer && selectedPlayer.name">
+          <!-- Здоровье и броня -->
+          <div class="health-armor-panel" v-if="selectedPlayerMaxHealth > 0">
+            <div class="health-main">
+              <div class="health-title">❤️ Здоровье</div>
+              <div class="health-bar-container">
+                <div class="health-bar" :style="{ width: healthPercent + '%' }" :class="healthStatus"></div>
+              </div>
+              <div class="health-text">{{ selectedPlayerHealth }} / {{ selectedPlayerMaxHealth }}</div>
+            </div>
+            <div class="armor-mini" v-if="selectedPlayer.armor !== undefined && selectedPlayer.armor !== null">
+              <span class="armor-mini-icon">🛡️</span>
+              <span class="armor-mini-value">{{ selectedPlayer.armor }}</span>
+            </div>
           </div>
-          <div class="health-text">{{ selectedPlayerHealth }} / {{ selectedPlayerMaxHealth }}</div>
+
+          <!-- Слоты заклинаний -->
+          <div class="spell-slots-panel" v-if="selectedPlayer.spellSlots">
+            <div class="spell-slots-title">✨ Ячейки заклинаний</div>
+            <div class="spell-slots-row">
+              <div
+                  class="spell-slot"
+                  :class="{ 'slot-available': isSlotAvailable(1), 'slot-empty': !isSlotAvailable(1) }"
+                  @click="openSpellsModal(1)"
+                  title="Скиллы 1 уровня"
+              >
+                <span class="slot-number">I</span>
+                <span class="slot-count">{{ getSpellCount(1) }}</span>
+              </div>
+              <div
+                  class="spell-slot"
+                  :class="{ 'slot-available': isSlotAvailable(2), 'slot-empty': !isSlotAvailable(2) }"
+                  @click="openSpellsModal(2)"
+                  title="Скиллы 2 уровня"
+              >
+                <span class="slot-number">II</span>
+                <span class="slot-count">{{ getSpellCount(2) }}</span>
+              </div>
+              <div
+                  class="spell-slot"
+                  :class="{ 'slot-available': isSlotAvailable(3), 'slot-empty': !isSlotAvailable(3) }"
+                  @click="openSpellsModal(3)"
+                  title="Скиллы 3 уровня"
+              >
+                <span class="slot-number">III</span>
+                <span class="slot-count">{{ getSpellCount(3) }}</span>
+              </div>
+              <div
+                  class="spell-slot"
+                  :class="{ 'slot-available': isSlotAvailable(4), 'slot-empty': !isSlotAvailable(4) }"
+                  @click="openSpellsModal(4)"
+                  title="Скиллы 4 уровня"
+              >
+                <span class="slot-number">IV</span>
+                <span class="slot-count">{{ getSpellCount(4) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Инвентарь -->
+          <div class="inventory-panel" v-if="selectedPlayer.inventory && selectedPlayer.inventory.length > 0">
+            <div class="inventory-title">🎒 Инвентарь</div>
+            <div class="inventory-list">
+              <div v-for="item in selectedPlayer.inventory" :key="item.id" class="inventory-item">
+                <div class="item-title">{{ item.title }}</div>
+                <div class="item-desc">{{ item.description }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Статы -->
+          <div class="stats-panel" v-if="selectedPlayer.stats && Object.keys(selectedPlayer.stats).length > 0">
+            <div class="stats-title">📊 Характеристики</div>
+            <div class="stats-list">
+              <div class="stat-row">
+                <span>💪 Сила</span>
+                <span>{{ selectedPlayer.stats.strength || 0 }}</span>
+              </div>
+              <div class="stat-row">
+                <span>🏃 Ловкость</span>
+                <span>{{ selectedPlayer.stats.dexterity || 0 }}</span>
+              </div>
+              <div class="stat-row">
+                <span>❤️ Телосложение</span>
+                <span>{{ selectedPlayer.stats.constitution || 0 }}</span>
+              </div>
+              <div class="stat-row">
+                <span>🧠 Интеллект</span>
+                <span>{{ selectedPlayer.stats.intelligence || 0 }}</span>
+              </div>
+              <div class="stat-row">
+                <span>🦉 Мудрость</span>
+                <span>{{ selectedPlayer.stats.wisdom || 0 }}</span>
+              </div>
+              <div class="stat-row">
+                <span>👄 Харизма</span>
+                <span>{{ selectedPlayer.stats.charisma || 0 }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- Инвентарь выбранного игрока -->
-        <div class="inventory-panel" v-if="selectedPlayer && selectedPlayer.inventory && selectedPlayer.inventory.length > 0">
-          <div class="inventory-title">🎒 Инвентарь {{ selectedPlayer.name }}</div>
-          <div class="inventory-list">
-            <div v-for="item in selectedPlayer.inventory" :key="item.id" class="inventory-item">
-              <div class="item-title">{{ item.title }}</div>
-              <div class="item-desc">{{ item.description }}</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Статы выбранного игрока -->
-        <div class="stats-panel" v-if="selectedPlayer && selectedPlayer.stats && Object.keys(selectedPlayer.stats).length > 0">
-          <div class="stats-title">📊 Характеристики</div>
-          <div class="stats-list">
-            <div class="stat-row">
-              <span>💪 Сила</span>
-              <span>{{ selectedPlayer.stats.strength || 0 }}</span>
-            </div>
-            <div class="stat-row">
-              <span>🏃 Ловкость</span>
-              <span>{{ selectedPlayer.stats.dexterity || 0 }}</span>
-            </div>
-            <div class="stat-row">
-              <span>❤️ Телосложение</span>
-              <span>{{ selectedPlayer.stats.constitution || 0 }}</span>
-            </div>
-            <div class="stat-row">
-              <span>🧠 Интеллект</span>
-              <span>{{ selectedPlayer.stats.intelligence || 0 }}</span>
-            </div>
-            <div class="stat-row">
-              <span>🦉 Мудрость</span>
-              <span>{{ selectedPlayer.stats.wisdom || 0 }}</span>
-            </div>
-            <div class="stat-row">
-              <span>👄 Харизма</span>
-              <span>{{ selectedPlayer.stats.charisma || 0 }}</span>
-            </div>
-          </div>
+        <!-- Сообщение для неинициализированного -->
+        <div class="player-not-init" v-if="selectedPlayer && !selectedPlayer.name">
+          <span>Персонаж ещё не создан</span>
         </div>
 
         <div class="current-player-info">
@@ -189,7 +312,6 @@
       <main class="chat-panel">
         <div class="chat-container">
           <div class="chat-messages" ref="chatContainer">
-            <!-- Сеттинг -->
             <div class="setting-block">
               <div class="setting-header">
                 <span>🌠</span>
@@ -199,7 +321,6 @@
               <p class="setting-text">{{ worldSetting }}</p>
             </div>
 
-            <!-- Главная цель -->
             <div class="goal-block">
               <div class="goal-header">
                 <span>🎯</span>
@@ -209,12 +330,10 @@
               <p class="goal-text">{{ mainGoal }}</p>
             </div>
 
-            <!-- Разделитель -->
             <div class="chat-divider" v-if="showDivider">
               <span>⚡ НАЧАЛО ИСТОРИИ ⚡</span>
             </div>
 
-            <!-- Сообщения -->
             <div
                 v-for="msg in messages"
                 :key="msg.id"
@@ -237,14 +356,12 @@
               <div class="message-text" v-html="msg.text"></div>
             </div>
 
-            <!-- Индикатор печати ИИ -->
             <div v-if="isAITyping" class="typing-indicator">
               <span>Виртуальный мастер печатает</span>
               <span class="dots">...</span>
             </div>
           </div>
 
-          <!-- Поле ввода -->
           <div class="chat-input-area">
             <div class="input-actions">
               <button
@@ -316,10 +433,6 @@
               >
                 <span class="action-icon">🎲</span>
                 <span class="action-text">d100</span>
-              </button>
-              <button class="action-btn" @click="insertEmoji('🎯')" title="Добавить эмодзи">
-                <span class="action-icon">😊</span>
-                <span class="action-text">Эмодзи</span>
               </button>
             </div>
 
@@ -401,13 +514,11 @@ export default {
       selectedPlayerHealth: 0,
       selectedPlayerMaxHealth: 0,
 
-      // Эффекты здоровья
       isHealthChanging: false,
       healthChangeValue: 0,
       healthChangeTimer: null,
       isTakingDamage: false,
 
-      // Кубики
       requiredDice: null,
       canRollDice: false,
       isInputDisabled: false,
@@ -418,6 +529,18 @@ export default {
       showDiceResult: false,
       diceResultData: null,
       lastDiceMessageId: null,
+
+      showSpellsModal: false,
+      selectedSpellLevel: 1,
+
+      // Ошибка
+      showErrorModal: false,
+      errorMessage: '',
+
+      // Окончание игры
+      showGameEndModal: false,
+      gameEndIsVictory: false,
+      gameEndMessage: '',
 
       messages: [],
       nextMessageId: 1,
@@ -440,14 +563,15 @@ export default {
       if (found && found.name) return found;
       if (found) return found;
       if (this.players.length > 0) return this.players[0];
-      return { id: 'unknown', name: 'Неизвестно', avatar: '?', color: '#666', inventory: [], stats: {}, health: 0, maxHealth: 0 };
+      return { id: 'unknown', name: '', avatar: '?', color: '#666', inventory: [], stats: {}, health: 0, maxHealth: 100, spells: [], spellSlots: {}, armor: 0 };
     },
     currentInitPlayer() {
       if (this.currentInitIndex < 0 || this.currentInitIndex >= this.players.length) return null;
       return this.players[this.currentInitIndex] || null;
     },
     healthPercent() {
-      if (this.selectedPlayerMaxHealth <= 0) return 0;
+      if (!this.selectedPlayerMaxHealth || this.selectedPlayerMaxHealth <= 0) return 0;
+      if (this.selectedPlayerHealth === undefined || this.selectedPlayerHealth === null) return 0;
       return Math.round((this.selectedPlayerHealth / this.selectedPlayerMaxHealth) * 100);
     },
     healthStatus() {
@@ -459,6 +583,10 @@ export default {
       if (this.healthChangeValue > 0) return 'heal';
       if (this.healthChangeValue < 0) return 'damage';
       return '';
+    },
+    currentLevelSpells() {
+      if (!this.selectedPlayer || !this.selectedPlayer.spells) return [];
+      return this.selectedPlayer.spells.filter(s => s.level === this.selectedSpellLevel);
     },
     inputPlaceholder() {
       if (this.isInputDisabled) return 'Бросьте кубик...';
@@ -480,7 +608,7 @@ export default {
     this.worldSetting = dataGame.context;
     this.mainGoal = dataGame.goal;
     for (let i = 0; i < dataGame.countGamer; i++) {
-      this.players.push({ id: dataGame.gamerIds[i] });
+      this.players.push({ id: dataGame.gamerIds[i], maxHealth: 100 });
     }
     this.currentInitIndex = 0;
     if (this.players.length > 0) {
@@ -507,9 +635,15 @@ export default {
 
   methods: {
     handleGlobalKeydown(e) {
-      if (e.key === 'Escape' && this.newMessage) {
-        this.newMessage = '';
-        this.$refs.messageInput?.focus();
+      if (e.key === 'Escape') {
+        if (this.showErrorModal) {
+          this.closeErrorModal();
+        } else if (this.showSpellsModal) {
+          this.closeSpellsModal();
+        } else if (this.newMessage) {
+          this.newMessage = '';
+          this.$refs.messageInput?.focus();
+        }
       }
     },
 
@@ -541,20 +675,87 @@ export default {
     },
 
     updateHealthInfo(player) {
-      if (player && player.health !== undefined) {
-        this.selectedPlayerHealth = player.health;
-      } else {
+      if (!player || !player.name) {
         this.selectedPlayerHealth = 0;
+        this.selectedPlayerMaxHealth = 0;
+        return;
       }
-      if (player && player.maxHealth !== undefined) {
-        this.selectedPlayerMaxHealth = player.maxHealth;
-      } else {
-        this.selectedPlayerMaxHealth = 100;
+      this.selectedPlayerHealth = player.health !== undefined ? player.health : 0;
+      this.selectedPlayerMaxHealth = player.maxHealth || 100;
+    },
+
+    getPlayerHealthPercent(player) {
+      if (!player || !player.maxHealth || !player.name) return 0;
+      return Math.round(((player.health || 0) / player.maxHealth) * 100);
+    },
+
+    getPlayerHealthStatus(player) {
+      const percent = this.getPlayerHealthPercent(player);
+      if (percent > 60) return 'health-good';
+      if (percent > 25) return 'health-medium';
+      return 'health-low';
+    },
+
+    isSlotAvailable(level) {
+      if (!this.selectedPlayer || !this.selectedPlayer.name || !this.selectedPlayer.spellSlots) return false;
+      const slots = this.selectedPlayer.spellSlots;
+      let slotArray;
+      switch(level) {
+        case 1: slotArray = slots.one; break;
+        case 2: slotArray = slots.two; break;
+        case 3: slotArray = slots.three; break;
+        case 4: slotArray = slots.four; break;
+        default: return false;
       }
+      if (!slotArray || !Array.isArray(slotArray) || slotArray.length === 0) return false;
+      return slotArray.includes(1);
+    },
+
+    getSpellCount(level) {
+      if (!this.selectedPlayer || !this.selectedPlayer.name || !this.selectedPlayer.spells) return 0;
+      return this.selectedPlayer.spells.filter(s => s.level === level).length;
+    },
+
+    openSpellsModal(level) {
+      if (!this.isSlotAvailable(level)) return;
+      this.selectedSpellLevel = level;
+      this.showSpellsModal = true;
+    },
+
+    closeSpellsModal() {
+      this.showSpellsModal = false;
+    },
+
+    useSpell(spell) {
+      this.newMessage = `Я использую "${spell.title}"`;
+      this.closeSpellsModal();
+      this.$nextTick(() => {
+        this.$refs.messageInput?.focus();
+      });
+    },
+
+    showError(message) {
+      this.errorMessage = message;
+      this.showErrorModal = true;
+    },
+
+    closeErrorModal() {
+      this.showErrorModal = false;
+      this.errorMessage = '';
+    },
+
+    showGameEnd(isVictory, message) {
+      this.gameEndIsVictory = isVictory;
+      this.gameEndMessage = message || (isVictory ? 'Ваше приключение завершилось триумфом!' : 'Тьма поглотила вас...');
+      this.showGameEndModal = true;
+    },
+
+    goToHome() {
+      this.$router.push('/');
     },
 
     showHealthChangeEffect(modification) {
-      if (modification !== 0) {
+      if (modification && modification !== 0) {
         this.healthChangeValue = modification;
         this.isHealthChanging = true;
         if (modification < 0) {
@@ -670,13 +871,14 @@ export default {
       const text = this.newMessage.trim();
       if (!text || this.isAITyping || this.isInputDisabled) return;
 
+      this.newMessage = '';
+
       if (this.isInitPhase) {
         await this.sendInitMessage(text);
       } else {
         await this.sendGameMessage(text);
       }
 
-      this.newMessage = '';
       this.$nextTick(() => {
         this.$refs.messageInput?.focus();
       });
@@ -723,6 +925,9 @@ export default {
             inventory: data.inventory || [],
             health: data.health || 100,
             maxHealth: data.maxHealth || 100,
+            armor: data.armor || 0,
+            spells: data.spells || [],
+            spellSlots: data.spellSlots || {},
           };
         }
 
@@ -750,7 +955,8 @@ export default {
           <b>Персонаж создан!</b><br><br>
           <b>Имя:</b> ${p.name}<br>
           <b>Класс:</b> ${p.character || 'Нет'}<br>
-          <b>Здоровье:</b> ${p.health || 100} / ${p.maxHealth || 100}<br><br>
+          <b>Здоровье:</b> ${p.health || 100} / ${p.maxHealth || 100}<br>
+          <b>Броня:</b> ${p.armor || 0}<br><br>
           <b>Описание:</b><br>${p.description || 'Нет'}
           ${statsText}
           ${inventoryText}
@@ -777,7 +983,7 @@ export default {
         }
       } catch (err) {
         this.isAITyping = false;
-        this.addErrorMessage('Ошибка при создании персонажа. Попробуйте ещё раз.');
+        this.showError('Ошибка при создании персонажа. Попробуйте ещё раз.');
         console.error(err);
       }
     },
@@ -795,7 +1001,7 @@ export default {
         }
       } catch (err) {
         this.isAITyping = false;
-        this.addErrorMessage('Ошибка при старте игры.');
+        this.showError('Ошибка при старте игры.');
         console.error(err);
       }
     },
@@ -803,7 +1009,7 @@ export default {
     async sendGameMessage(text) {
       const player = this.currentPlayer;
       if (!player || !player.name) {
-        this.addErrorMessage('Пожалуйста, выберите игрока слева перед отправкой.');
+        this.showError('Пожалуйста, выберите игрока слева перед отправкой.');
         return;
       }
 
@@ -811,15 +1017,14 @@ export default {
         this.clearAllMessages();
         this.showDivider = false;
         this.isFirstAction = false;
-      } else {
-        this.removeLastPlayerMessage();
-        this.removeLastAIMessage();
-        this.removeLastErrorMessage();
-        this.removeLastCorrectionMessage();
-        this.removeDiceMessage();
       }
 
       this.addPlayerMessage(player, text, true);
+
+      // Удаляем старые сообщения если больше 10
+      while (this.messages.length > 10) {
+        this.messages.splice(0, 2);
+      }
 
       this.isAITyping = true;
       try {
@@ -829,17 +1034,22 @@ export default {
         };
 
         await this.$store.dispatch('action', form);
-        const data = this.$store.getters.ACTIONS;
+        const actionsData = this.$store.getters.ACTIONS;
+        const gamerData = this.$store.getters.GAMER;
+
         this.isAITyping = false;
 
-        if (data && data.reaction) {
-          this.addAIMessage(data.reaction, false, true);
+        if (actionsData && actionsData.error && actionsData.error !== null && actionsData.error !== '') {
+          this.showError(actionsData.error);
+          return;
+        }
+
+        if (actionsData && actionsData.reaction) {
+          this.addAIMessage(actionsData.reaction, false, true);
         }
 
         this.checkDiceRequirement();
 
-        const gamerData = this.$store.getters.GAMER;
-        const actionsData = this.$store.getters.ACTIONS;
         const playerIndex = this.players.findIndex(p => p.id === player.id);
 
         if (playerIndex !== -1) {
@@ -847,7 +1057,6 @@ export default {
             this.players[playerIndex].inventory = gamerData.inventory;
           }
 
-          // Здоровье из GAMER.health
           if (gamerData && gamerData.health !== undefined) {
             this.players[playerIndex].health = gamerData.health;
           }
@@ -855,11 +1064,22 @@ export default {
             this.players[playerIndex].maxHealth = gamerData.maxHealth;
           }
 
+          if (gamerData && gamerData.armor !== undefined) {
+            this.players[playerIndex].armor = gamerData.armor;
+          }
+
           if (gamerData && gamerData.stats) {
             this.players[playerIndex].stats = gamerData.stats;
           }
 
-          // Модификация здоровья из ACTIONS.healthModification
+          if (gamerData && gamerData.spells) {
+            this.players[playerIndex].spells = gamerData.spells;
+          }
+
+          if (gamerData && gamerData.spellSlots) {
+            this.players[playerIndex].spellSlots = gamerData.spellSlots;
+          }
+
           if (actionsData && actionsData.healthModification !== undefined && actionsData.healthModification !== null && actionsData.healthModification !== 0) {
             this.showHealthChangeEffect(actionsData.healthModification);
           }
@@ -870,13 +1090,14 @@ export default {
           }
         }
 
-        if (data && data.is_final) {
-          const msg = data.is_victory ? '🏆 Поздравляю! Вы победили!' : '💀 Игра окончена... Поражение.';
-          setTimeout(() => this.addAIMessage(msg), 1000);
+        if (actionsData && actionsData.isFinal) {
+          const isVictory = actionsData.isVictory || false;
+          const message = actionsData.finalMessage || '';
+          this.showGameEnd(isVictory, message);
         }
       } catch (err) {
         this.isAITyping = false;
-        this.addErrorMessage('Ошибка. Попробуйте ещё раз.');
+        this.showError('Ошибка. Попробуйте ещё раз.');
         console.error(err);
       }
     },
@@ -1024,12 +1245,6 @@ export default {
       this.$refs.messageInput?.focus();
     },
 
-    insertEmoji(emoji) {
-      if (this.isInputDisabled) return;
-      this.newMessage += ' ' + emoji;
-      this.$refs.messageInput?.focus();
-    },
-
     scrollToBottom() {
       this.$nextTick(() => {
         const container = this.$refs.chatContainer;
@@ -1056,6 +1271,354 @@ export default {
 </script>
 
 <style scoped>
+/* === МОДАЛЬНОЕ ОКНО ОКОНЧАНИЯ ИГРЫ === */
+.game-end-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(16px);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.5s ease;
+}
+
+.game-end-modal {
+  position: relative;
+  border-radius: 32px;
+  padding: 48px 40px 36px;
+  text-align: center;
+  max-width: 460px;
+  width: 90%;
+  animation: gameEndPop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  overflow: hidden;
+}
+
+.game-end-modal.victory {
+  background: linear-gradient(160deg, #1A2A15, #0F1A0A);
+  border: 2px solid rgba(200, 180, 60, 0.5);
+  box-shadow:
+      0 0 80px rgba(200, 180, 60, 0.25),
+      0 0 160px rgba(255, 215, 0, 0.1),
+      0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.game-end-modal.defeat {
+  background: linear-gradient(160deg, #1A1015, #0F0A10);
+  border: 2px solid rgba(255, 60, 60, 0.5);
+  box-shadow:
+      0 0 80px rgba(255, 60, 60, 0.25),
+      0 0 160px rgba(255, 30, 30, 0.1),
+      0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.game-end-glow {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+}
+
+.victory .game-end-glow {
+  background: radial-gradient(circle at center, rgba(255, 215, 0, 0.08) 0%, transparent 50%);
+  animation: victoryGlow 3s ease-in-out infinite;
+}
+
+.defeat .game-end-glow {
+  background: radial-gradient(circle at center, rgba(255, 40, 40, 0.08) 0%, transparent 50%);
+  animation: defeatGlow 3s ease-in-out infinite;
+}
+
+@keyframes victoryGlow {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+@keyframes defeatGlow {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.game-end-content {
+  position: relative;
+  z-index: 1;
+}
+
+.game-end-icon {
+  font-size: 80px;
+  margin-bottom: 16px;
+  animation: iconBounce 2s infinite;
+}
+
+@keyframes iconBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.game-end-title {
+  font-size: 36px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+.victory .game-end-title {
+  color: #FFD700;
+  text-shadow: 0 0 40px rgba(255, 215, 0, 0.6);
+}
+
+.defeat .game-end-title {
+  color: #FF4444;
+  text-shadow: 0 0 40px rgba(255, 60, 60, 0.6);
+}
+
+.game-end-text {
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+  padding: 0 10px;
+}
+
+.victory .game-end-text {
+  color: #C8D8A0;
+}
+
+.defeat .game-end-text {
+  color: #D0A0A0;
+}
+
+.game-end-divider {
+  width: 80px;
+  height: 2px;
+  margin: 0 auto 24px;
+}
+
+.victory .game-end-divider {
+  background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.5), transparent);
+}
+
+.defeat .game-end-divider {
+  background: linear-gradient(90deg, transparent, rgba(255, 80, 80, 0.5), transparent);
+}
+
+.game-end-btn {
+  padding: 16px 44px;
+  border: none;
+  border-radius: 40px;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.3s;
+  width: 100%;
+}
+
+.victory .game-end-btn {
+  background: linear-gradient(145deg, #C8A84B, #A08830);
+  color: #1A1A2E;
+  box-shadow: 0 4px 20px rgba(200, 168, 75, 0.4);
+}
+
+.victory .game-end-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(200, 168, 75, 0.6);
+  background: linear-gradient(145deg, #D8B860, #B09840);
+}
+
+.defeat .game-end-btn {
+  background: linear-gradient(145deg, #8B3030, #5A2020);
+  color: #FFB0B0;
+  box-shadow: 0 4px 20px rgba(255, 40, 40, 0.25);
+}
+
+.defeat .game-end-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(255, 60, 60, 0.4);
+  background: linear-gradient(145deg, #A04040, #703030);
+}
+
+.game-end-arrow {
+  font-size: 20px;
+  transition: transform 0.3s;
+}
+
+.game-end-btn:hover .game-end-arrow {
+  transform: translateX(4px);
+}
+
+@keyframes gameEndPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* === МОДАЛЬНОЕ ОКНО ОШИБКИ === */
+.error-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.error-modal {
+  position: relative;
+  background: linear-gradient(160deg, #1A1015, #0F0A10);
+  border-radius: 28px;
+  padding: 48px 36px 32px;
+  text-align: center;
+  box-shadow:
+      0 0 80px rgba(255, 60, 60, 0.25),
+      0 0 160px rgba(255, 30, 30, 0.12),
+      0 20px 50px rgba(0, 0, 0, 0.6);
+  max-width: 440px;
+  width: 90%;
+  animation: errorPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  overflow: hidden;
+}
+
+.error-modal-border {
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  padding: 2px;
+  background: linear-gradient(135deg,
+  rgba(255, 80, 80, 0.6),
+  rgba(255, 30, 30, 0.3),
+  rgba(200, 100, 50, 0.5),
+  rgba(255, 60, 60, 0.4)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: borderGlow 2s ease-in-out infinite;
+}
+
+@keyframes borderGlow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+.error-modal-content {
+  position: relative;
+  z-index: 1;
+}
+
+.error-modal-icon-container {
+  margin-bottom: 20px;
+}
+
+.error-modal-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto;
+  background: radial-gradient(circle, rgba(255, 60, 60, 0.25), rgba(255, 30, 30, 0.08));
+  border: 2px solid rgba(255, 80, 80, 0.4);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  animation: errorPulse 2s infinite;
+  box-shadow: 0 0 40px rgba(255, 40, 40, 0.3);
+}
+
+@keyframes errorPulse {
+  0%, 100% {
+    box-shadow: 0 0 40px rgba(255, 40, 40, 0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 60px rgba(255, 60, 60, 0.5);
+    transform: scale(1.05);
+  }
+}
+
+.error-modal-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #FF5555;
+  letter-spacing: 3px;
+  margin-bottom: 16px;
+  text-shadow: 0 0 30px rgba(255, 60, 60, 0.5);
+  text-transform: uppercase;
+}
+
+.error-modal-text {
+  font-size: 15px;
+  color: #D0A0A0;
+  line-height: 1.6;
+  margin-bottom: 24px;
+  padding: 0 10px;
+}
+
+.error-modal-divider {
+  width: 60px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 80, 80, 0.5), transparent);
+  margin: 0 auto 24px;
+}
+
+.error-close-btn {
+  padding: 14px 40px;
+  background: linear-gradient(145deg, #8B3030, #5A2020);
+  border: 1px solid rgba(255, 80, 80, 0.4);
+  border-radius: 40px;
+  color: #FFB0B0;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.3s;
+  box-shadow: 0 4px 20px rgba(255, 40, 40, 0.25);
+  width: 100%;
+}
+
+.error-close-btn:hover {
+  background: linear-gradient(145deg, #A04040, #703030);
+  border-color: rgba(255, 100, 100, 0.6);
+  color: #FFD0D0;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(255, 60, 60, 0.4);
+}
+
+.error-btn-arrow {
+  font-size: 18px;
+  transition: transform 0.3s;
+}
+
+.error-close-btn:hover .error-btn-arrow {
+  transform: translateX(4px);
+}
+
+@keyframes errorPop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 /* === АНИМАЦИЯ ЗДОРОВЬЯ === */
 .health-change-overlay {
   position: fixed;
@@ -1130,7 +1693,6 @@ export default {
   color: #88FF88;
 }
 
-/* Затемнение при уроне */
 .damage-overlay {
   position: fixed;
   inset: 0;
@@ -1235,11 +1797,6 @@ export default {
   align-items: center;
   justify-content: center;
   animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 .dice-modal {
@@ -1399,6 +1956,495 @@ export default {
   50% { box-shadow: 0 0 30px rgba(200, 168, 75, 0.6); }
 }
 
+/* === ОКНО СКИЛЛОВ === */
+.spells-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.spells-modal {
+  background: linear-gradient(145deg, #1A2535, #0F1925);
+  border: 2px solid #7B6FB0;
+  border-radius: 24px;
+  padding: 30px;
+  box-shadow: 0 0 60px rgba(123, 111, 176, 0.3), 0 20px 40px rgba(0, 0, 0, 0.5);
+  max-width: 500px;
+  width: 90%;
+  max-height: 70vh;
+  overflow-y: auto;
+  animation: modalPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.spells-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 18px;
+  font-weight: 700;
+  color: #C8B8F0;
+  letter-spacing: 2px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #3A4A6A;
+}
+
+.spells-close-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(100, 90, 140, 0.3);
+  border: 1px solid #5A4A8A;
+  color: #A0B0D0;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.spells-close-btn:hover {
+  background: rgba(140, 120, 200, 0.4);
+  border-color: #7B6FB0;
+  color: #D8D0F0;
+}
+
+.spells-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spell-card {
+  background: rgba(30, 40, 60, 0.5);
+  border: 1px solid #3A4A6A;
+  border-radius: 16px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.spell-card:hover {
+  border-color: #7B6FB0;
+  background: rgba(50, 40, 80, 0.5);
+  box-shadow: 0 0 20px rgba(123, 111, 176, 0.15);
+  transform: translateY(-2px);
+}
+
+.spell-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.spell-title {
+  color: #D8C8F0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.spell-level {
+  background: rgba(123, 111, 176, 0.3);
+  border: 1px solid #7B6FB0;
+  border-radius: 20px;
+  padding: 2px 12px;
+  color: #B0A0D8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.spell-description {
+  color: #8090B0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.spells-empty {
+  text-align: center;
+  padding: 30px;
+  color: #607090;
+  font-size: 14px;
+}
+
+/* === СЛОТЫ ЗАКЛИНАНИЙ === */
+.spell-slots-panel {
+  background: rgba(20, 30, 50, 0.6);
+  border: 1px solid #3A4A6A;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.spell-slots-title {
+  color: #A090D0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+}
+
+.spell-slots-row {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.spell-slot {
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: 2px solid #3A4A6A;
+}
+
+.spell-slot.slot-available {
+  background: rgba(100, 80, 160, 0.3);
+  border-color: #7B6FB0;
+  box-shadow: 0 0 15px rgba(123, 111, 176, 0.2);
+}
+
+.spell-slot.slot-available:hover {
+  background: rgba(140, 110, 220, 0.5);
+  border-color: #A090D0;
+  box-shadow: 0 0 25px rgba(123, 111, 176, 0.4);
+  transform: translateY(-2px);
+}
+
+.spell-slot.slot-empty {
+  background: rgba(30, 30, 40, 0.4);
+  border-color: #2A2A3A;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.slot-number {
+  font-size: 18px;
+  font-weight: 700;
+  color: #D8D0F0;
+}
+
+.slot-count {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.slot-available .slot-count {
+  color: #8BFF8B;
+}
+
+.slot-empty .slot-count {
+  color: #606060;
+}
+
+/* === БРОНЯ В БЛОКЕ ЗДОРОВЬЯ === */
+.health-armor-panel {
+  background: rgba(20, 30, 50, 0.6);
+  border: 1px solid #3A4A6A;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  position: relative;
+}
+
+.health-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.health-title {
+  color: #BE5B5B;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  margin-bottom: 8px;
+}
+
+.health-bar-container {
+  width: 100%;
+  height: 14px;
+  background: #1A2535;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.health-bar {
+  height: 100%;
+  border-radius: 10px;
+  transition: width 0.5s ease;
+}
+
+.health-good { background: linear-gradient(90deg, #5B9E6B, #7BC87B); }
+.health-medium { background: linear-gradient(90deg, #C8A84B, #D8C870); }
+.health-low { background: linear-gradient(90deg, #C85B4B, #E0705B); animation: pulse-health 1s infinite; }
+@keyframes pulse-health {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.health-text {
+  color: #A0B0C0;
+  font-size: 11px;
+}
+
+.armor-mini {
+  position: absolute;
+  top: 11px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.armor-mini-icon {
+  font-size: 12px;
+}
+
+.armor-mini-value {
+  color: #C8B060;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Инвентарь */
+.inventory-panel {
+  background: rgba(20, 30, 50, 0.6);
+  border: 1px solid #3A4A6A;
+  border-radius: 12px;
+  padding: 12px;
+}
+.inventory-title {
+  color: #C8B060;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+}
+.inventory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.inventory-item {
+  background: rgba(30, 40, 60, 0.5);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.item-title {
+  color: #D8C880;
+  font-size: 12px;
+  font-weight: 600;
+}
+.item-desc {
+  color: #8090B0;
+  font-size: 10px;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* Статы */
+.stats-panel {
+  background: rgba(20, 30, 50, 0.6);
+  border: 1px solid #3A4A6A;
+  border-radius: 12px;
+  padding: 12px;
+}
+.stats-title {
+  color: #7B8FC0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+}
+.stats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  background: rgba(30, 40, 60, 0.3);
+  border-radius: 6px;
+  color: #A0B8D8;
+  font-size: 11px;
+}
+.stat-row span:last-child {
+  color: #C8D8F0;
+  font-weight: 600;
+}
+
+/* === КОМПАКТНЫЙ СПИСОК ИГРОКОВ === */
+.players-compact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.player-compact-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(20, 28, 45, 0.6);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.player-compact-item:hover {
+  background: rgba(40, 50, 80, 0.6);
+  border-color: #4A5A8A;
+}
+
+.player-compact-item.is-current {
+  background: rgba(91, 110, 154, 0.25);
+  border-color: #5B6E9A;
+}
+
+.player-compact-item.is-initialized {
+  border-left: 2px solid #6B9E7A;
+}
+
+.player-compact-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  flex-shrink: 0;
+}
+
+.player-compact-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-compact-name {
+  font-weight: 600;
+  color: #E0E8FF;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-compact-bars {
+  width: 100%;
+}
+
+.mini-hp-bar {
+  width: 100%;
+  height: 4px;
+  background: #1A2535;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-hp-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.mini-hp-fill.health-good { background: #5B9E6B; }
+.mini-hp-fill.health-medium { background: #C8A84B; }
+.mini-hp-fill.health-low { background: #C85B4B; }
+
+.player-compact-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.compact-hp {
+  color: #BE5B5B;
+  font-weight: 600;
+}
+
+.player-indicator {
+  color: #7B6FB0;
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+/* Детальная информация */
+.player-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid #2A3550;
+}
+
+.player-not-init {
+  text-align: center;
+  padding: 20px;
+  color: #607090;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.current-player-info {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #2A3550;
+}
+
+.info-label {
+  font-size: 11px;
+  color: #7080A0;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+}
+
+.current-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #C8D0E8;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.player-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
 /* === ОСНОВНОЕ === */
 .game-container {
   min-height: 100vh;
@@ -1493,13 +2539,20 @@ export default {
 
 /* === ЛЕВАЯ ПАНЕЛЬ === */
 .players-panel {
-  width: 280px; background: rgba(8, 12, 20, 0.85);
-  backdrop-filter: blur(12px); border-right: 1px solid #2A3550;
-  padding: 20px 16px; display: flex; flex-direction: column; gap: 16px;
-  transition: transform 0.3s ease; z-index: 20; overflow-y: auto;
+  width: 280px;
+  background: rgba(8, 12, 20, 0.85);
+  backdrop-filter: blur(12px);
+  border-right: 1px solid #2A3550;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  transition: transform 0.3s ease;
+  z-index: 20;
+  overflow-y: auto;
 }
 
-.panel-header { display: flex; align-items: center; justify-content: space-between; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .panel-close {
   display: none; background: transparent; border: 1px solid #5A5A7A;
   border-radius: 10px; width: 36px; height: 36px; font-size: 20px;
@@ -1509,98 +2562,12 @@ export default {
 .panel-title {
   display: flex; align-items: center; gap: 10px;
   color: #A0B0D0; font-size: 14px; font-weight: 600;
-  letter-spacing: 2px; padding-bottom: 16px; border-bottom: 1px solid #2A3550;
+  letter-spacing: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #2A3550;
+  margin-bottom: 12px;
 }
 .player-count { margin-left: auto; background: #1E2840; padding: 2px 10px; border-radius: 20px; font-size: 12px; }
-
-.players-list { display: flex; flex-direction: column; gap: 8px; }
-
-.player-item {
-  display: flex; align-items: center; gap: 12px; padding: 12px;
-  background: rgba(20, 28, 45, 0.6); border-radius: 16px;
-  cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
-}
-.player-item:hover { background: rgba(40, 50, 80, 0.6); border-color: #4A5A8A; }
-.player-item.is-current { background: rgba(91, 110, 154, 0.25); border-color: #5B6E9A; }
-.player-item.is-initialized { border-left: 2px solid #6B9E7A; }
-
-.player-avatar {
-  width: 44px; height: 44px; border-radius: 14px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; font-weight: bold; color: white; flex-shrink: 0;
-}
-
-.player-info { flex: 1; min-width: 0; }
-.player-name { font-weight: 600; color: #E0E8FF; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.player-role { font-size: 12px; color: #8090B0; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.player-indicator { color: #7B6FB0; font-size: 16px; flex-shrink: 0; }
-
-/* Здоровье */
-.health-panel {
-  background: rgba(20, 30, 50, 0.6); border: 1px solid #3A4A6A;
-  border-radius: 12px; padding: 12px;
-}
-.health-title {
-  color: #BE5B5B; font-size: 12px; font-weight: 600;
-  letter-spacing: 1.5px; margin-bottom: 10px;
-}
-.health-bar-container {
-  width: 100%; height: 14px; background: #1A2535;
-  border-radius: 10px; overflow: hidden; margin-bottom: 8px;
-}
-.health-bar {
-  height: 100%; border-radius: 10px; transition: width 0.5s ease;
-}
-.health-good { background: linear-gradient(90deg, #5B9E6B, #7BC87B); }
-.health-medium { background: linear-gradient(90deg, #C8A84B, #D8C870); }
-.health-low { background: linear-gradient(90deg, #C85B4B, #E0705B); animation: pulse-health 1s infinite; }
-@keyframes pulse-health {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-.health-text {
-  color: #A0B0C0; font-size: 11px; text-align: center;
-}
-
-/* Инвентарь */
-.inventory-panel {
-  background: rgba(20, 30, 50, 0.6); border: 1px solid #3A4A6A;
-  border-radius: 12px; padding: 12px;
-}
-.inventory-title {
-  color: #C8B060; font-size: 12px; font-weight: 600;
-  letter-spacing: 1.5px; margin-bottom: 10px;
-}
-.inventory-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
-.inventory-item {
-  background: rgba(30, 40, 60, 0.5); border-radius: 8px; padding: 8px 10px;
-}
-.item-title { color: #D8C880; font-size: 12px; font-weight: 600; }
-.item-desc { color: #8090B0; font-size: 10px; margin-top: 2px; line-height: 1.3; }
-
-/* Статы */
-.stats-panel {
-  background: rgba(20, 30, 50, 0.6); border: 1px solid #3A4A6A;
-  border-radius: 12px; padding: 12px;
-}
-.stats-title {
-  color: #7B8FC0; font-size: 12px; font-weight: 600;
-  letter-spacing: 1.5px; margin-bottom: 10px;
-}
-.stats-list { display: flex; flex-direction: column; gap: 6px; }
-.stat-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 4px 8px; background: rgba(30, 40, 60, 0.3); border-radius: 6px;
-  color: #A0B8D8; font-size: 11px;
-}
-.stat-row span:last-child { color: #C8D8F0; font-weight: 600; }
-
-.current-player-info {
-  margin-top: auto; padding-top: 16px; border-top: 1px solid #2A3550;
-}
-.info-label { font-size: 11px; color: #7080A0; letter-spacing: 1.5px; margin-bottom: 10px; }
-.current-player { display: flex; align-items: center; gap: 10px; color: #C8D0E8; font-size: 15px; font-weight: 500; }
-.player-color-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
 
 .panel-overlay {
   display: none; position: fixed; inset: 0;
@@ -1705,10 +2672,7 @@ export default {
   flex: 1; background: transparent; border: none;
   padding: 12px 4px; color: #E8F0FF; font-size: 14px; outline: none; min-width: 0;
 }
-.message-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.message-input:disabled { opacity: 0.5; cursor: not-allowed; }
 .message-input::placeholder { color: #607090; font-weight: 300; }
 .char-counter { color: #607090; font-size: 10px; padding: 0 6px; }
 .clear-btn {
@@ -1777,9 +2741,8 @@ export default {
   .pulse-dot { width: 6px; height: 6px; }
   .menu-toggle { width: 38px; height: 38px; font-size: 20px; }
   .players-panel { width: 260px; padding: 16px 12px; }
-  .player-avatar { width: 38px; height: 38px; font-size: 18px; }
-  .player-name { font-size: 14px; }
-  .player-role { font-size: 11px; }
+  .player-compact-avatar { width: 32px; height: 32px; font-size: 14px; }
+  .player-compact-name { font-size: 12px; }
   .chat-messages { padding: 10px; gap: 10px; }
   .setting-block, .goal-block { padding: 12px; }
   .setting-text, .goal-text { font-size: 12px; }
@@ -1796,6 +2759,14 @@ export default {
   .send-btn { font-size: 12px; letter-spacing: 1.5px; }
   .hint-text { display: none; }
   .input-hint { gap: 4px; }
+  .spell-slot { width: 44px; height: 44px; }
+  .slot-number { font-size: 16px; }
+  .error-modal { padding: 36px 24px 24px; }
+  .error-modal-title { font-size: 22px; }
+  .error-modal-icon { width: 64px; height: 64px; font-size: 28px; }
+  .game-end-modal { padding: 36px 24px 24px; }
+  .game-end-title { font-size: 28px; }
+  .game-end-icon { font-size: 60px; }
 }
 
 @media (max-width: 360px) {

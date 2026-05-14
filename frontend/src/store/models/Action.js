@@ -5,6 +5,9 @@ export class Action {
         this.requiredRollOfDice = data.required_roll_of_dice !== null
             ? new RequiredRollOfDice(data.required_roll_of_dice)
             : null
+        this.isFinal = data.is_final
+        this.isVictory = data.is_victory
+        this.error = data.error || null
     }
 }
 
