@@ -919,10 +919,55 @@ export default {
 
       this.removeDiceMessage();
 
-      const actions = this.$store.getters.ACTIONS;
-      if (actions && actions.reaction) {
-        this.addAIMessage(actions.reaction, false, true);
+      const actionsData = this.$store.getters.ACTIONS;
+      const gamerData = this.$store.getters.GAMER;
+
+      if (actionsData && actionsData.reaction) {
+        this.addAIMessage(actionsData.reaction, false, true);
       }
+
+      if (actionsData && actionsData.battle !== undefined) {
+        this.updateEnemies(actionsData.battle);
+      }
+
+      if (actionsData && actionsData.healthModification !== undefined && actionsData.healthModification !== null && actionsData.healthModification !== 0) {
+        this.showHealthChangeEffect(actionsData.healthModification);
+      }
+
+      // Обновление данных игрока после броска кубика
+      if (this.requiredDice && this.requiredDice.gamerId) {
+        const playerIndex = this.players.findIndex(p => p.id === this.requiredDice.gamerId);
+        if (playerIndex !== -1) {
+          // Сначала вычисляем новое здоровье на основе healthModification
+          if (actionsData && actionsData.healthModification !== undefined) {
+            const currentHealth = this.players[playerIndex].health || 0;
+            this.players[playerIndex].health = currentHealth + actionsData.healthModification;
+          } else if (gamerData && gamerData.health !== undefined) {
+            // Используем данные из gamerData если healthModification не доступен
+            this.players[playerIndex].health = gamerData.health;
+          }
+          
+          if (gamerData && gamerData.maxHealth !== undefined) {
+            this.players[playerIndex].maxHealth = gamerData.maxHealth;
+          }
+          if (gamerData && gamerData.armor !== undefined) {
+            this.players[playerIndex].armor = gamerData.armor;
+          }
+
+          if (this.selectedPlayer && this.selectedPlayer.id === this.requiredDice.gamerId) {
+            this.selectedPlayer = { ...this.players[playerIndex] };
+            this.updateHealthInfo(this.players[playerIndex]);
+          }
+        }
+      }
+
+      if (actionsData && actionsData.isFinal) {
+        const isVictory = actionsData.isVictory || false;
+        const message = actionsData.finalMessage || '';
+        this.showGameEnd(isVictory, message);
+      }
+
+      this.checkDiceRequirement();
     },
 
     async sendMessage() {
@@ -962,7 +1007,7 @@ export default {
 
         const data = this.$store.getters.GAMER;
 
-        if (data && data.correction && data.correction !== null && data.correction !== '') {
+        if (data && data.correction && data.correction !== '') {
           this.isAITyping = false;
           this.addCorrectionMessage(data.correction);
           return;
@@ -1071,7 +1116,7 @@ export default {
       }
 
       if (this.isFirstAction) {
-        this.clearAllMessages();
+        // Не удаляем сообщения - оставляем начальный сюжет в чате
         this.showDivider = false;
         this.isFirstAction = false;
       }
@@ -1161,16 +1206,6 @@ export default {
         this.showError('Ошибка. Попробуйте ещё раз.');
         console.error(err);
       }
-    },
-
-    clearAllMessages() {
-      this.messages = [];
-      this.lastPlayerMessageId = null;
-      this.lastAIMessageId = null;
-      this.lastErrorMessageId = null;
-      this.lastCorrectionMessageId = null;
-      this.lastDiceMessageId = null;
-      this.nextMessageId = 1;
     },
 
     removeLastPlayerMessage() {
