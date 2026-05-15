@@ -133,6 +133,15 @@ const actions = {
             })
         return response.data.data
     },
+    async initGame({commit}, gameId) {
+        const response = await axios.get(`/api/v1/games/${gameId}`, {},
+            {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+        commit('setGame', response.data.data)
+    },
 }
 
 export default {

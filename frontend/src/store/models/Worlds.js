@@ -1,9 +1,10 @@
 export class WorldCollection {
     constructor(data) {
         this.total = data.total
+        this.worlds = []
         if (data.data !== []) {
             for (let i = 0; i < data.data.length; i++) {
-                this.worlds = new World(data.data[i])
+                this.worlds.push(new World(data.data[i]))
             }
         }
     }

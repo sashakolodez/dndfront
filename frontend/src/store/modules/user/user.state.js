@@ -1,8 +1,5 @@
 import axios from "axios";
-import { Game } from '@/store/models/Game';
-import {Gamers, Health} from "@/store/models/Gamers.js";
-import { Action } from "@/store/models/Action.js";
-import { Dice } from "@/store/models/Dice.js";
+import {WorldCollection} from "@/store/models/Worlds.js";
 
 const state = {
     world: null,
@@ -10,13 +7,13 @@ const state = {
 
 const getters = {
     WORLD: state => {
-        return state.game
+        return state.world
     },
 }
 
 const mutations = {
-    setWorld(state, content) {
-        state.game = content ? new Game(content) : null
+    setWorld(state, data) {
+        state.world = new WorldCollection(data)
     }
 }
 
@@ -31,7 +28,7 @@ const actions = {
                     'Content-Type': 'application/json'
             }
             })
-        commit('setWorld', response.data.data)
+        commit('setWorld', response.data)
     },
 }
 
