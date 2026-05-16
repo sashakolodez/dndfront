@@ -594,6 +594,7 @@ export default {
       worldSetting: null,
       mainGoal: null,
 
+      isNewGame: true,
       currentInitIndex: 0,
       isInitPhase: true,
       isFirstAction: true,
@@ -659,12 +660,36 @@ export default {
   },
   computed: {
     players() {
-      const isNewGame = this.$store.getters.NEW_GAME;
       const game = this.$store.getters.GAME;
       const gamersCollection = this.$store.getters.GAMERS;
       const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
 
-      // Если есть gamers в коллекции - используем их
+      // Для новой игры - всегда используем gamerIds из GAME
+      if (this.isNewGame) {
+        if (game && game.gamerIds && game.gamerIds.length > 0) {
+          return game.gamerIds.map((id, index) => ({
+            id: id,
+            name: '',
+            isInit: false,
+            avatar: '?',
+            color: colors[index % colors.length],
+            displayName: `Игрок ${index + 1}`,
+            character: null,
+            description: '',
+            stats: {},
+            inventory: [],
+            health: 100,
+            maxHealth: 100,
+            armor: 0,
+            spells: [],
+            spellSlots: null,
+            correction: null
+          }));
+        }
+        return [];
+      }
+
+      // Для существующей игры - используем GAMERS
       if (gamersCollection && gamersCollection.gamers && gamersCollection.gamers.length > 0) {
         return gamersCollection.gamers.map((gamer, index) => ({
           ...gamer,
@@ -674,56 +699,33 @@ export default {
         }));
       }
 
-      // Если gamers нет, но есть gamerIds (новая игра, стадия инициализации)
-      if (game && game.gamerIds && game.gamerIds.length > 0) {
-        return game.gamerIds.map((id, index) => ({
-          id: id,
-          name: '',
-          isInit: false,
-          avatar: '?',
-          color: colors[index % colors.length],
-          displayName: `Игрок ${index + 1}`,
-          character: null,
-          description: '',
-          stats: {},
-          inventory: [],
-          health: 100,
-          maxHealth: 100,
-          armor: 0,
-          spells: [],
-          spellSlots: null,
-          correction: null
-        }));
-      }
-
       return [];
     },
 
     currentPlayer() {
-      const isNewGame = this.$store.getters.NEW_GAME;
       const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
 
-      // Сначала всегда проверяем GAMER в store
+      // Для новой игры - ищем во временном массиве
+      if (this.isNewGame) {
+        const player = this.players.find(p => p.id === this.currentPlayerId);
+        return player || this.players[0] || this.getDefaultPlayer();
+      }
+
+      // Для существующей игры - берем из store
       const gamer = this.$store.getters.GAMER;
-      if (gamer && gamer.id) {
-        const playerIndex = this.players.findIndex(p => p.id === gamer.id);
-
-        return {
-          ...gamer,
-          avatar: (gamer.name || '?').charAt(0).toUpperCase(),
-          color: colors[playerIndex >= 0 ? playerIndex % colors.length : 0],
-          displayName: gamer.name || `Игрок ${playerIndex + 1}`
-        };
+      if (!gamer) {
+        const firstPlayer = this.players[0];
+        return firstPlayer || this.getDefaultPlayer();
       }
 
-      // Если GAMER нет - ищем в players по currentPlayerId
-      const player = this.players.find(p => p.id === this.currentPlayerId);
-      if (player) {
-        return player;
-      }
+      const playerIndex = this.players.findIndex(p => p.id === gamer.id);
 
-      // Если ничего не нашли - возвращаем первого или дефолтного
-      return this.players[0] || this.getDefaultPlayer();
+      return {
+        ...gamer,
+        avatar: (gamer.name || '?').charAt(0).toUpperCase(),
+        color: colors[playerIndex >= 0 ? playerIndex % colors.length : 0],
+        displayName: gamer.name || `Игрок ${playerIndex + 1}`
+      };
     },
 
     currentInitPlayer() {
@@ -781,15 +783,28 @@ export default {
   },
 
   async mounted() {
+    const gameId = this.$route.params.uuid;
+    const isNewParam = this.$route.query.is_new;
+    this.isNewGame = isNewParam === 'true' || isNewParam === true;
+
+    // Для существующей игры делаем запрос searchGame
+    if (!this.isNewGame) {
+      try {
+        await this.$store.dispatch('searchGame', gameId);
+      } catch (err) {
+        console.error('Ошибка при загрузке игры:', err);
+        this.showError('Не удалось загрузить игру.');
+        return;
+      }
+    }
+
     let dataGame = this.$store.getters.GAME;
     this.worldName = dataGame.name;
     this.worldSetting = dataGame.context;
     this.mainGoal = dataGame.goal;
 
-    const isNewGame = this.$store.getters.NEW_GAME;
-
-    if (!isNewGame) {
-      // Существующая игра (NEW_GAME = false)
+    if (!this.isNewGame) {
+      // Существующая игра
       if (dataGame.startMess) {
         this.addAIMessage(dataGame.startMess, false, true);
       }
@@ -825,7 +840,7 @@ export default {
         this.updateEnemies(dataGame.battle);
       }
     } else {
-      // Новая игра (NEW_GAME = true)
+      // Новая игра
       if (this.players.length > 0) {
         this.currentPlayerId = this.players[0].id;
       }
@@ -908,10 +923,8 @@ export default {
         }
       }
 
-      const isNewGame = this.$store.getters.NEW_GAME;
-
-      // Для новой игры на стадии инициализации не используем store
-      if (!isNewGame || !this.isInitPhase) {
+      // Для существующей игры обновляем current gamer в store
+      if (!this.isNewGame) {
         this.$store.commit('setCurrentGamer', playerId);
       }
 
@@ -1051,8 +1064,7 @@ export default {
         this.isNPCTurn = false;
         this.waitingForPlayerAction = true;
 
-        const isNewGame = this.$store.getters.NEW_GAME;
-        if (!isNewGame || !this.isInitPhase) {
+        if (!this.isNewGame) {
           this.$store.commit('setCurrentGamer', currentUnit.id);
         }
         this.currentPlayerId = currentUnit.id;
@@ -1380,8 +1392,10 @@ export default {
         this.isAITyping = false;
 
         if (data && data.name) {
-          // Всегда устанавливаем current gamer
-          this.$store.commit('setCurrentGamer', player.id);
+          // Устанавливаем текущего игрока
+          if (!this.isNewGame) {
+            this.$store.commit('setCurrentGamer', player.id);
+          }
           this.currentPlayerId = player.id;
 
           await this.$nextTick();
@@ -1406,21 +1420,23 @@ export default {
           }
 
           this.addSystemMessage(`
-        <b>Персонаж создан!</b><br><br>
-        <b>Имя:</b> ${updatedPlayer.name}<br>
-        <b>Класс:</b> ${updatedPlayer.character || 'Нет'}<br>
-        <b>Здоровье:</b> ${updatedPlayer.health || 100} / ${updatedPlayer.maxHealth || 100}<br>
-        <b>Броня:</b> ${updatedPlayer.armor || 0}<br><br>
-        <b>Описание:</b><br>${updatedPlayer.description || 'Нет'}
-        ${statsText}
-        ${inventoryText}
-      `);
+            <b>Персонаж создан!</b><br><br>
+            <b>Имя:</b> ${updatedPlayer.name}<br>
+            <b>Класс:</b> ${updatedPlayer.character || 'Нет'}<br>
+            <b>Здоровье:</b> ${updatedPlayer.health || 100} / ${updatedPlayer.maxHealth || 100}<br>
+            <b>Броня:</b> ${updatedPlayer.armor || 0}<br><br>
+            <b>Описание:</b><br>${updatedPlayer.description || 'Нет'}
+            ${statsText}
+            ${inventoryText}
+          `);
 
           // Ищем следующего неинициализированного игрока
           const nextNotInit = this.players.find(p => !p.isInit);
 
           if (nextNotInit) {
-            this.$store.commit('setCurrentGamer', nextNotInit.id);
+            if (!this.isNewGame) {
+              this.$store.commit('setCurrentGamer', nextNotInit.id);
+            }
             this.currentPlayerId = nextNotInit.id;
 
             setTimeout(() => {
@@ -1430,12 +1446,13 @@ export default {
             this.isInitPhase = false;
 
             if (this.players.length > 0) {
-              this.$store.commit('setCurrentGamer', this.players[0].id);
+              if (!this.isNewGame) {
+                this.$store.commit('setCurrentGamer', this.players[0].id);
+              }
               this.currentPlayerId = this.players[0].id;
             }
 
-            const isNewGame = this.$store.getters.NEW_GAME;
-            if (isNewGame) {
+            if (this.isNewGame) {
               setTimeout(() => this.startGame(), 500);
             }
           }
@@ -1485,7 +1502,7 @@ export default {
           gamer_id: player.id,
           action: text
         };
-        console.log(this.$store.getters.GAMER)
+
         await this.$store.dispatch('action', form);
         const actionsData = this.$store.getters.ACTIONS;
 

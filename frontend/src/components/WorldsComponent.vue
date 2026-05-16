@@ -204,8 +204,7 @@ export default {
     },
 
     async goToGame(id) {
-      await this.$store.dispatch('searchGame', id)
-      this.$router.push(`/${id}/game`);
+      this.$router.push(`/${id}/game?is_new=false`);
     },
 
     goHome() {
