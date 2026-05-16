@@ -3,6 +3,7 @@ import { Game } from '@/store/models/Game';
 import {GamerCollection, Gamers, Health} from "@/store/models/Gamers.js";
 import { Action } from "@/store/models/Action.js";
 import { Dice } from "@/store/models/Dice.js";
+import { BattleInit, NPCAction } from "@/store/models/Battle.js";
 
 const state = {
     game: null,
@@ -32,6 +33,12 @@ const getters = {
     NEW_GAME: state => {
         return state.newGame
     },
+    BATTLE_INIT: state => {
+        return state.battleInit
+    },
+    NPC_ACTION: state => {
+        return state.npcAction
+    }
 }
 
 const mutations = {
@@ -81,8 +88,13 @@ const mutations = {
                 break
             }
         }
-        console.log(state.gamers)
-    }
+    },
+    setBattleInit(state, data) {
+        state.battleInit = data ? new BattleInit(data) : null
+    },
+    setNPCAction(state, data) {
+        state.npcAction = data ? new NPCAction(data) : null
+    },
 }
 
 const actions = {
@@ -156,21 +168,22 @@ const actions = {
                     'Content-Type': 'application/json'
                 }
             })
-        return response.data.data
+        commit('setBattleInit', response.data.data)
     },
 
     async npcAction({commit}, data) {
         const response = await axios.post(`/api/v1/actions/npc`, {
-            game_id: data.gameId,
-            npc_id: data.npcId
-        },
+                game_id: data.gameId,
+                npc_id: data.npcId
+            },
             {
                 headers: {
                     'Content-Type': 'application/json'
                 }
             })
-        return response.data.data
+        commit('setNPCAction', response.data.data)
     },
+
     async searchGame({commit}, gameId) {
         const response = await axios.get(`/api/v1/games/${gameId}`,
             {

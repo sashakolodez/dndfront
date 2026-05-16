@@ -56,24 +56,24 @@
               v-for="(item, index) in initiativeResults"
               :key="item.id"
               class="initiative-item"
-              :class="{ 'initiative-first': index === 0, 'initiative-player': item.unit_type === 'gamer', 'initiative-npc': item.unit_type === 'nps' }"
+              :class="{ 'initiative-first': index === 0, 'initiative-player': item.unitType === 'gamer', 'initiative-npc': item.unitType === 'nps' }"
           >
             <div class="initiative-position">{{ index + 1 }}</div>
-            <div class="initiative-avatar">{{ item.unit_type === 'gamer' ? '🧙' : '👹' }}</div>
+            <div class="initiative-avatar">{{ item.unitType === 'gamer' ? '🧙' : '👹' }}</div>
             <div class="initiative-info">
               <div class="initiative-name">{{ item.name }}</div>
-              <div class="initiative-type">{{ item.unit_type === 'gamer' ? 'Игрок' : 'Противник' }}</div>
+              <div class="initiative-type">{{ item.unitType === 'gamer' ? 'Игрок' : 'Противник' }}</div>
             </div>
             <div class="initiative-roll">
               <div class="initiative-dice">
                 <span class="dice-label">Бросок</span>
-                <span class="dice-value">{{ item.roll_dice }}</span>
+                <span class="dice-value">{{ item.rollDice }}</span>
               </div>
               <div class="initiative-bonus" v-if="item.bonus">
                 <span class="bonus-label">+{{ item.bonus }}</span>
-                <span class="bonus-stat">({{ getStatName(item.bonus_stat) }})</span>
+                <span class="bonus-stat">({{ getStatName(item.bonusStat) }})</span>
               </div>
-              <div class="initiative-total">{{ item.roll_dice + (item.bonus || 0) }}</div>
+              <div class="initiative-total">{{ item.total }}</div>
             </div>
           </div>
         </div>
@@ -235,7 +235,7 @@
               {{ player.avatar || '?' }}
             </div>
             <div class="player-compact-info">
-              <div class="player-compact-name">{{ player.name || 'Игрок ' + (index + 1) }}</div>
+              <div class="player-compact-name">{{ player.displayName }}</div>
               <div class="player-compact-bars" v-if="player.isInit && player.maxHealth">
                 <div class="mini-hp-bar">
                   <div class="mini-hp-fill" :style="{ width: getPlayerHealthPercent(player) + '%' }" :class="getPlayerHealthStatus(player)"></div>
@@ -361,7 +361,7 @@
           <div class="info-label">Вы пишете как:</div>
           <div class="current-player">
             <span class="player-color-dot" :style="{ background: currentPlayer.color || '#666' }"></span>
-            <span>{{ currentPlayer.name || currentPlayer.id || 'Не выбран' }}</span>
+            <span>{{ currentPlayer.displayName || currentPlayer.id || 'Не выбран' }}</span>
           </div>
         </div>
       </aside>
@@ -601,6 +601,7 @@ export default {
       showDivider: true,
 
       currentPlayerId: null,
+      briefRetellingMessageId: null,
 
       isHealthChanging: false,
       healthChangeValue: 0,
@@ -664,32 +665,7 @@ export default {
       const gamersCollection = this.$store.getters.GAMERS;
       const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
 
-      // Для новой игры - всегда используем gamerIds из GAME
-      if (this.isNewGame) {
-        if (game && game.gamerIds && game.gamerIds.length > 0) {
-          return game.gamerIds.map((id, index) => ({
-            id: id,
-            name: '',
-            isInit: false,
-            avatar: '?',
-            color: colors[index % colors.length],
-            displayName: `Игрок ${index + 1}`,
-            character: null,
-            description: '',
-            stats: {},
-            inventory: [],
-            health: 100,
-            maxHealth: 100,
-            armor: 0,
-            spells: [],
-            spellSlots: null,
-            correction: null
-          }));
-        }
-        return [];
-      }
-
-      // Для существующей игры - используем GAMERS
+      // Всегда сначала проверяем GAMERS
       if (gamersCollection && gamersCollection.gamers && gamersCollection.gamers.length > 0) {
         return gamersCollection.gamers.map((gamer, index) => ({
           ...gamer,
@@ -699,33 +675,60 @@ export default {
         }));
       }
 
+      // Если GAMERS пуст, но есть gamerIds (новая игра, стадия инициализации)
+      if (game && game.gamerIds && game.gamerIds.length > 0) {
+        return game.gamerIds.map((id, index) => ({
+          id: id,
+          name: '',
+          isInit: false,
+          avatar: '?',
+          color: colors[index % colors.length],
+          displayName: `Игрок ${index + 1}`,
+          character: null,
+          description: '',
+          stats: {},
+          inventory: [],
+          health: 100,
+          maxHealth: 100,
+          armor: 0,
+          spells: [],
+          spellSlots: null,
+          correction: null
+        }));
+      }
+
       return [];
     },
 
     currentPlayer() {
       const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
 
-      // Для новой игры - ищем во временном массиве
-      if (this.isNewGame) {
-        const player = this.players.find(p => p.id === this.currentPlayerId);
-        return player || this.players[0] || this.getDefaultPlayer();
-      }
-
-      // Для существующей игры - берем из store
+      // Сначала всегда проверяем GAMER в store
       const gamer = this.$store.getters.GAMER;
-      if (!gamer) {
-        const firstPlayer = this.players[0];
-        return firstPlayer || this.getDefaultPlayer();
+      if (gamer && gamer.id) {
+        const playerIndex = this.players.findIndex(p => p.id === gamer.id);
+
+        return {
+          ...gamer,
+          avatar: (gamer.name || '?').charAt(0).toUpperCase(),
+          color: colors[playerIndex >= 0 ? playerIndex % colors.length : 0],
+          displayName: gamer.name || `Игрок ${playerIndex + 1}`
+        };
       }
 
-      const playerIndex = this.players.findIndex(p => p.id === gamer.id);
+      // Если GAMER пустой, ищем в players
+      const player = this.players.find(p => p.id === this.currentPlayerId);
+      if (player && player.name) {
+        return player;
+      }
 
-      return {
-        ...gamer,
-        avatar: (gamer.name || '?').charAt(0).toUpperCase(),
-        color: colors[playerIndex >= 0 ? playerIndex % colors.length : 0],
-        displayName: gamer.name || `Игрок ${playerIndex + 1}`
-      };
+      // Для новой игры на стадии инициализации
+      if (this.isNewGame && this.isInitPhase) {
+        const tempPlayer = this.players.find(p => p.id === this.currentPlayerId);
+        return tempPlayer || this.players[0] || this.getDefaultPlayer();
+      }
+
+      return this.players[0] || this.getDefaultPlayer();
     },
 
     currentInitPlayer() {
@@ -787,7 +790,6 @@ export default {
     const isNewParam = this.$route.query.is_new;
     this.isNewGame = isNewParam === 'true' || isNewParam === true;
 
-    // Для существующей игры делаем запрос searchGame
     if (!this.isNewGame) {
       try {
         await this.$store.dispatch('searchGame', gameId);
@@ -804,9 +806,9 @@ export default {
     this.mainGoal = dataGame.goal;
 
     if (!this.isNewGame) {
-      // Существующая игра
       if (dataGame.startMess) {
-        this.addAIMessage(dataGame.startMess, false, true);
+        const msg = this.addAIMessage(dataGame.startMess, false, true);
+        this.briefRetellingMessageId = msg.id;
       }
 
       const hasUninitializedPlayers = this.players.some(p => !p.isInit);
@@ -840,7 +842,6 @@ export default {
         this.updateEnemies(dataGame.battle);
       }
     } else {
-      // Новая игра
       if (this.players.length > 0) {
         this.currentPlayerId = this.players[0].id;
       }
@@ -923,11 +924,7 @@ export default {
         }
       }
 
-      // Для существующей игры обновляем current gamer в store
-      if (!this.isNewGame) {
-        this.$store.commit('setCurrentGamer', playerId);
-      }
-
+      this.$store.commit('setCurrentGamer', playerId);
       this.currentPlayerId = playerId;
 
       if (window.innerWidth <= 768) {
@@ -1008,26 +1005,26 @@ export default {
       this.isInputDisabled = true;
 
       try {
-        const battleData = await this.$store.dispatch('startBattle', gameData.id);
+        await this.$store.dispatch('startBattle', gameData.id);
+        const battleInit = this.$store.getters.BATTLE_INIT;
 
         this.isBattleLoading = false;
 
-        if (battleData && battleData.roll_dices && battleData.roll_dices.length > 0) {
-          const sortedResults = [...battleData.roll_dices].sort((a, b) => {
-            const totalA = a.roll_dice + (a.bonus || 0);
-            const totalB = b.roll_dice + (b.bonus || 0);
-            return totalB - totalA;
-          });
+        if (battleInit && battleInit.rollDices && battleInit.rollDices.length > 0) {
+          const sortedResults = [...battleInit.rollDices]
+              .map(item => ({
+                id: item.id,
+                name: item.name,
+                unitType: item.unitType,
+                rollDice: item.rollDice,
+                bonus: item.bonus || 0,
+                bonusStat: item.bonusStat,
+                total: item.rollDice + (item.bonus || 0)
+              }))
+              .sort((a, b) => b.total - a.total);
 
           this.initiativeResults = sortedResults;
-          this.battleOrder = sortedResults.map(item => ({
-            id: item.id,
-            name: item.name,
-            unitType: item.unit_type,
-            rollDice: item.roll_dice,
-            bonus: item.bonus || 0,
-            total: item.roll_dice + (item.bonus || 0)
-          }));
+          this.battleOrder = [...sortedResults];
 
           this.showInitiativeModal = true;
         } else {
@@ -1064,9 +1061,7 @@ export default {
         this.isNPCTurn = false;
         this.waitingForPlayerAction = true;
 
-        if (!this.isNewGame) {
-          this.$store.commit('setCurrentGamer', currentUnit.id);
-        }
+        this.$store.commit('setCurrentGamer', currentUnit.id);
         this.currentPlayerId = currentUnit.id;
       } else {
         this.isPlayerTurn = false;
@@ -1080,14 +1075,20 @@ export default {
     async executeNPCTurn() {
       try {
         const currentUnit = this.battleOrder[this.currentTurnIndex];
+        if (!currentUnit) {
+          this.nextTurn();
+          return;
+        }
 
         this.isNPCTyping = true;
-        this.npcTypingName = currentUnit ? currentUnit.name : 'Противник';
+        this.npcTypingName = currentUnit.name || 'Противник';
 
-        const npcData = await this.$store.dispatch('npcAction', {
+        await this.$store.dispatch('npcAction', {
           gameId: this.$store.getters.GAME.id,
-          npcId: currentUnit ? currentUnit.id : null
+          npcId: currentUnit.id
         });
+
+        const npcData = this.$store.getters.NPC_ACTION;
 
         this.isNPCTyping = false;
 
@@ -1096,8 +1097,8 @@ export default {
             this.addAIMessage(npcData.action, false, true);
           }
 
-          if (npcData.damage > 0 && npcData.gamer_id) {
-            const player = this.players.find(p => p.id === npcData.gamer_id);
+          if (npcData.damage > 0 && npcData.gamerId) {
+            const player = this.players.find(p => p.id === npcData.gamerId);
             if (player) {
               player.health = Math.max(0, (player.health || 0) - npcData.damage);
               this.showHealthChangeEffect(-npcData.damage);
@@ -1109,6 +1110,8 @@ export default {
           setTimeout(() => {
             this.nextTurn();
           }, 1000);
+        } else {
+          this.nextTurn();
         }
       } catch (err) {
         this.isNPCTyping = false;
@@ -1382,20 +1385,17 @@ export default {
 
         const data = this.$store.getters.GAMER;
 
-        // Если пришло уточнение - показываем его и НЕ меняем состояние
         if (data && data.correction && data.correction !== '') {
           this.isAITyping = false;
           this.addCorrectionMessage(data.correction);
-          return; // Выходим, игрок остается тот же для повторного ввода
+          return;
         }
 
         this.isAITyping = false;
 
         if (data && data.name) {
-          // Устанавливаем текущего игрока
-          if (!this.isNewGame) {
-            this.$store.commit('setCurrentGamer', player.id);
-          }
+          // ВСЕГДА устанавливаем current gamer
+          this.$store.commit('setCurrentGamer', player.id);
           this.currentPlayerId = player.id;
 
           await this.$nextTick();
@@ -1430,13 +1430,10 @@ export default {
             ${inventoryText}
           `);
 
-          // Ищем следующего неинициализированного игрока
           const nextNotInit = this.players.find(p => !p.isInit);
 
           if (nextNotInit) {
-            if (!this.isNewGame) {
-              this.$store.commit('setCurrentGamer', nextNotInit.id);
-            }
+            this.$store.commit('setCurrentGamer', nextNotInit.id);
             this.currentPlayerId = nextNotInit.id;
 
             setTimeout(() => {
@@ -1446,13 +1443,21 @@ export default {
             this.isInitPhase = false;
 
             if (this.players.length > 0) {
-              if (!this.isNewGame) {
-                this.$store.commit('setCurrentGamer', this.players[0].id);
-              }
+              this.$store.commit('setCurrentGamer', this.players[0].id);
               this.currentPlayerId = this.players[0].id;
             }
 
             if (this.isNewGame) {
+              setTimeout(() => this.startGame(), 500);
+            } else {
+              if (this.briefRetellingMessageId !== null) {
+                const index = this.messages.findIndex(m => m.id === this.briefRetellingMessageId);
+                if (index !== -1) {
+                  this.messages.splice(index, 1);
+                }
+                this.briefRetellingMessageId = null;
+              }
+
               setTimeout(() => this.startGame(), 500);
             }
           }
