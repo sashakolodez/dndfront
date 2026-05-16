@@ -94,6 +94,10 @@ const mutations = {
     },
     setNPCAction(state, data) {
         state.npcAction = data ? new NPCAction(data) : null
+        if (data.is_final) {
+            state.game.isFinal = data.is_final
+            state.game.isVictory = false
+        }
     },
 }
 
