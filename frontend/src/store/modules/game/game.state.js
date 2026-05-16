@@ -1,6 +1,6 @@
 import axios from "axios";
 import { Game } from '@/store/models/Game';
-import {Gamers, Health} from "@/store/models/Gamers.js";
+import {GamerCollection, Gamers, Health} from "@/store/models/Gamers.js";
 import { Action } from "@/store/models/Action.js";
 import { Dice } from "@/store/models/Dice.js";
 
@@ -8,7 +8,9 @@ const state = {
     game: null,
     gamer: null,
     actions: null,
-    dice: null
+    dice: null,
+    gamers: null,
+    newGame: true
 }
 
 const getters = {
@@ -23,15 +25,29 @@ const getters = {
     },
     DICE: state => {
         return state.dice
-    }
+    },
+    GAMERS: state => {
+        return state.gamers
+    },
+    NEW_GAME: state => {
+        return state.newGame
+    },
 }
 
 const mutations = {
     setGame(state, content) {
         state.game = content ? new Game(content) : null
+        state.newGame = true
     },
     setGamer(state, content, id) {
-        state.gamer = content ? new Gamers(id, content) : null
+        state.gamer = content ? new Gamers(content) : null
+        if (state.gamers === null) {
+            state.gamers = new GamerCollection()
+            state.gamers.addGamer(state.gamer)
+        }
+        else {
+            state.gamers.addGamer(state.gamer)
+        }
     },
     setStart(state, data) {
         state.game.addStartMess(data)
@@ -44,6 +60,22 @@ const mutations = {
     setDice(state, data) {
         state.actions = new Action(data.continue)
         state.dice = new Dice(data)
+    },
+    setSearchGame (state, data) {
+        state.game = data ? new Game(data) : null
+        state.game.addBriefRetelling(data.brief_retelling)
+        state.gamers = new GamerCollection()
+        state.gamers.addGamers(data.gamers)
+        state.newGame = false
+    },
+    setCurrentGamer(state, gamerId) {
+        for (let i = 0; i < state.gamers.gamers.length; i++) {
+            if (state.gamers.gamers[i].id === gamerId) {
+                state.gamer = state.gamers.gamers[i]
+                break
+            }
+        }
+        console.log(state.gamer)
     }
 }
 
@@ -133,14 +165,14 @@ const actions = {
             })
         return response.data.data
     },
-    async initGame({commit}, gameId) {
-        const response = await axios.get(`/api/v1/games/${gameId}`, {},
+    async searchGame({commit}, gameId) {
+        const response = await axios.get(`/api/v1/games/${gameId}`,
             {
                 headers: {
                     'Content-Type': 'application/json'
                 }
             })
-        commit('setGame', response.data.data)
+        commit('setSearchGame', response.data.data)
     },
 }
 

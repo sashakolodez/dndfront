@@ -12,4 +12,8 @@ export class Game {
     addStartMess(data) {
         this.startMess = data.action
     }
+
+    addBriefRetelling(data) {
+        this.startMess = data
+    }
 }

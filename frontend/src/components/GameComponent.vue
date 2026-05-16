@@ -53,10 +53,10 @@
         <div class="initiative-subtitle">Порядок инициативы</div>
         <div class="initiative-list">
           <div
-            v-for="(item, index) in initiativeResults"
-            :key="item.id"
-            class="initiative-item"
-            :class="{ 'initiative-first': index === 0, 'initiative-player': item.unit_type === 'gamer', 'initiative-npc': item.unit_type === 'nps' }"
+              v-for="(item, index) in initiativeResults"
+              :key="item.id"
+              class="initiative-item"
+              :class="{ 'initiative-first': index === 0, 'initiative-player': item.unit_type === 'gamer', 'initiative-npc': item.unit_type === 'nps' }"
           >
             <div class="initiative-position">{{ index + 1 }}</div>
             <div class="initiative-avatar">{{ item.unit_type === 'gamer' ? '🧙' : '👹' }}</div>
@@ -228,7 +228,7 @@
               v-for="(player, index) in players"
               :key="player.id"
               class="player-compact-item"
-              :class="{ 'is-current': player.id === currentPlayerId, 'is-initialized': player.name }"
+              :class="{ 'is-current': player.id === currentPlayerId, 'is-initialized': player.isInit }"
               @click="selectPlayer(player.id)"
           >
             <div class="player-compact-avatar" :style="{ background: player.color || '#666' }">
@@ -236,21 +236,21 @@
             </div>
             <div class="player-compact-info">
               <div class="player-compact-name">{{ player.name || 'Игрок ' + (index + 1) }}</div>
-              <div class="player-compact-bars" v-if="player.name && player.maxHealth">
+              <div class="player-compact-bars" v-if="player.isInit && player.maxHealth">
                 <div class="mini-hp-bar">
                   <div class="mini-hp-fill" :style="{ width: getPlayerHealthPercent(player) + '%' }" :class="getPlayerHealthStatus(player)"></div>
                 </div>
               </div>
             </div>
             <div class="player-compact-stats">
-              <span class="compact-hp" v-if="player.name">❤️ {{ player.health || 0 }}</span>
+              <span class="compact-hp" v-if="player.isInit">❤️ {{ player.health || 0 }}</span>
             </div>
             <div class="player-indicator" v-if="player.id === currentPlayerId">▼</div>
           </div>
         </div>
 
         <!-- Детальная информация только для выбранного инициализированного игрока -->
-        <div class="player-details" v-if="selectedPlayer && selectedPlayer.name">
+        <div class="player-details" v-if="selectedPlayer && selectedPlayer.isInit">
           <!-- Здоровье и броня -->
           <div class="health-armor-panel" v-if="selectedPlayerMaxHealth > 0">
             <div class="health-main">
@@ -353,7 +353,7 @@
         </div>
 
         <!-- Сообщение для неинициализированного -->
-        <div class="player-not-init" v-if="selectedPlayer && !selectedPlayer.name">
+        <div class="player-not-init" v-if="selectedPlayer && !selectedPlayer.isInit">
           <span>Персонаж ещё не создан</span>
         </div>
 
@@ -594,16 +594,12 @@ export default {
       worldSetting: null,
       mainGoal: null,
 
-      players: [],
       currentInitIndex: 0,
       isInitPhase: true,
       isFirstAction: true,
       showDivider: true,
 
       currentPlayerId: null,
-      selectedPlayer: null,
-      selectedPlayerHealth: 0,
-      selectedPlayerMaxHealth: 0,
 
       isHealthChanging: false,
       healthChangeValue: 0,
@@ -624,20 +620,16 @@ export default {
       showSpellsModal: false,
       selectedSpellLevel: 1,
 
-      // Ошибка
       showErrorModal: false,
       errorMessage: '',
 
-      // Окончание игры
       showGameEndModal: false,
       gameEndIsVictory: false,
       gameEndMessage: '',
 
-      // Враги
       showEnemiesPanel: false,
       enemies: [],
 
-      // Бой
       isBattleActive: false,
       isBattleLoading: false,
       battleOrder: [],
@@ -666,36 +658,114 @@ export default {
     };
   },
   computed: {
+    players() {
+      const isNewGame = this.$store.getters.NEW_GAME;
+      const game = this.$store.getters.GAME;
+      const gamersCollection = this.$store.getters.GAMERS;
+      const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
+
+      // Если есть gamers в коллекции - используем их
+      if (gamersCollection && gamersCollection.gamers && gamersCollection.gamers.length > 0) {
+        return gamersCollection.gamers.map((gamer, index) => ({
+          ...gamer,
+          avatar: (gamer.name || '?').charAt(0).toUpperCase(),
+          color: colors[index % colors.length],
+          displayName: gamer.name || `Игрок ${index + 1}`
+        }));
+      }
+
+      // Если gamers нет, но есть gamerIds (новая игра, стадия инициализации)
+      if (game && game.gamerIds && game.gamerIds.length > 0) {
+        return game.gamerIds.map((id, index) => ({
+          id: id,
+          name: '',
+          isInit: false,
+          avatar: '?',
+          color: colors[index % colors.length],
+          displayName: `Игрок ${index + 1}`,
+          character: null,
+          description: '',
+          stats: {},
+          inventory: [],
+          health: 100,
+          maxHealth: 100,
+          armor: 0,
+          spells: [],
+          spellSlots: null,
+          correction: null
+        }));
+      }
+
+      return [];
+    },
+
     currentPlayer() {
-      const found = this.players.find(p => p.id === this.currentPlayerId);
-      if (found && found.name) return found;
-      if (found) return found;
-      if (this.players.length > 0) return this.players[0];
-      return { id: 'unknown', name: '', avatar: '?', color: '#666', inventory: [], stats: {}, health: 0, maxHealth: 100, spells: [], spellSlots: {}, armor: 0 };
+      const isNewGame = this.$store.getters.NEW_GAME;
+      const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
+
+      // Сначала всегда проверяем GAMER в store
+      const gamer = this.$store.getters.GAMER;
+      if (gamer && gamer.id) {
+        const playerIndex = this.players.findIndex(p => p.id === gamer.id);
+
+        return {
+          ...gamer,
+          avatar: (gamer.name || '?').charAt(0).toUpperCase(),
+          color: colors[playerIndex >= 0 ? playerIndex % colors.length : 0],
+          displayName: gamer.name || `Игрок ${playerIndex + 1}`
+        };
+      }
+
+      // Если GAMER нет - ищем в players по currentPlayerId
+      const player = this.players.find(p => p.id === this.currentPlayerId);
+      if (player) {
+        return player;
+      }
+
+      // Если ничего не нашли - возвращаем первого или дефолтного
+      return this.players[0] || this.getDefaultPlayer();
     },
+
     currentInitPlayer() {
-      if (this.currentInitIndex < 0 || this.currentInitIndex >= this.players.length) return null;
-      return this.players[this.currentInitIndex] || null;
+      return this.players.find(p => !p.isInit) || null;
     },
+
+    selectedPlayer() {
+      return this.currentPlayer;
+    },
+
+    selectedPlayerHealth() {
+      if (!this.currentPlayer || !this.currentPlayer.isInit) return 0;
+      return this.currentPlayer.health || 0;
+    },
+
+    selectedPlayerMaxHealth() {
+      if (!this.currentPlayer || !this.currentPlayer.isInit) return 0;
+      return this.currentPlayer.maxHealth || 100;
+    },
+
     healthPercent() {
       if (!this.selectedPlayerMaxHealth || this.selectedPlayerMaxHealth <= 0) return 0;
-      if (this.selectedPlayerHealth === undefined || this.selectedPlayerHealth === null) return 0;
       return Math.round((this.selectedPlayerHealth / this.selectedPlayerMaxHealth) * 100);
     },
+
     healthStatus() {
       if (this.healthPercent > 60) return 'health-good';
       if (this.healthPercent > 25) return 'health-medium';
       return 'health-low';
     },
+
     healthChangeType() {
       if (this.healthChangeValue > 0) return 'heal';
       if (this.healthChangeValue < 0) return 'damage';
       return '';
     },
+
     currentLevelSpells() {
-      if (!this.selectedPlayer || !this.selectedPlayer.spells) return [];
-      return this.selectedPlayer.spells.filter(s => s.level === this.selectedSpellLevel);
+      if (!this.currentPlayer || !this.currentPlayer.spells) return [];
+      return this.currentPlayer.spells.filter(s => s.level === this.selectedSpellLevel);
     },
+
     inputPlaceholder() {
       if (this.isInputDisabled) return 'Бросьте кубик...';
       if (window.innerWidth <= 480) {
@@ -715,21 +785,59 @@ export default {
     this.worldName = dataGame.name;
     this.worldSetting = dataGame.context;
     this.mainGoal = dataGame.goal;
-    for (let i = 0; i < dataGame.countGamer; i++) {
-      this.players.push({ id: dataGame.gamerIds[i], maxHealth: 100 });
-    }
-    this.currentInitIndex = 0;
-    if (this.players.length > 0) {
-      this.currentPlayerId = this.players[0].id;
-      this.selectedPlayer = this.players[0];
-    }
-    this.isInitPhase = true;
-    this.isFirstAction = true;
-    this.showDivider = true;
 
-    setTimeout(() => {
-      this.addAIMessage('Игрок, опишите своего персонажа!');
-    }, 500);
+    const isNewGame = this.$store.getters.NEW_GAME;
+
+    if (!isNewGame) {
+      // Существующая игра (NEW_GAME = false)
+      if (dataGame.startMess) {
+        this.addAIMessage(dataGame.startMess, false, true);
+      }
+
+      const hasUninitializedPlayers = this.players.some(p => !p.isInit);
+
+      if (hasUninitializedPlayers) {
+        this.isInitPhase = true;
+        this.isFirstAction = true;
+        this.showDivider = true;
+
+        const firstNotInit = this.players.find(p => !p.isInit);
+        if (firstNotInit) {
+          this.$store.commit('setCurrentGamer', firstNotInit.id);
+          this.currentPlayerId = firstNotInit.id;
+        }
+
+        setTimeout(() => {
+          this.addAIMessage('Игрок, опишите своего персонажа!');
+        }, 500);
+      } else {
+        this.isInitPhase = false;
+        this.isFirstAction = false;
+        this.showDivider = false;
+
+        if (this.players.length > 0) {
+          this.$store.commit('setCurrentGamer', this.players[0].id);
+          this.currentPlayerId = this.players[0].id;
+        }
+      }
+
+      if (dataGame.battle && dataGame.battle.isActive) {
+        this.updateEnemies(dataGame.battle);
+      }
+    } else {
+      // Новая игра (NEW_GAME = true)
+      if (this.players.length > 0) {
+        this.currentPlayerId = this.players[0].id;
+      }
+
+      this.isInitPhase = true;
+      this.isFirstAction = true;
+      this.showDivider = true;
+
+      setTimeout(() => {
+        this.addAIMessage('Игрок, опишите своего персонажа!');
+      }, 500);
+    }
 
     window.addEventListener('keydown', this.handleGlobalKeydown);
     window.addEventListener('resize', this.handleResize);
@@ -742,6 +850,27 @@ export default {
   },
 
   methods: {
+    getDefaultPlayer() {
+      return {
+        id: 'unknown',
+        name: '',
+        avatar: '?',
+        color: '#666',
+        isInit: false,
+        displayName: 'Не выбран',
+        inventory: [],
+        stats: {},
+        health: 0,
+        maxHealth: 100,
+        spells: [],
+        spellSlots: null,
+        armor: 0,
+        character: null,
+        description: '',
+        correction: null
+      };
+    },
+
     handleGlobalKeydown(e) {
       if (e.key === 'Escape') {
         if (this.showErrorModal) {
@@ -770,30 +899,31 @@ export default {
     },
 
     selectPlayer(playerId) {
-      const player = this.players.find(p => p.id === playerId);
-      if (!player) return;
+      if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
+        const currentUnit = this.battleOrder[this.currentTurnIndex];
+        if (currentUnit && currentUnit.unitType === 'gamer') {
+          if (currentUnit.id !== playerId) {
+            return;
+          }
+        }
+      }
+
+      const isNewGame = this.$store.getters.NEW_GAME;
+
+      // Для новой игры на стадии инициализации не используем store
+      if (!isNewGame || !this.isInitPhase) {
+        this.$store.commit('setCurrentGamer', playerId);
+      }
 
       this.currentPlayerId = playerId;
-      this.selectedPlayer = player;
-      this.updateHealthInfo(player);
 
       if (window.innerWidth <= 768) {
         this.closePlayersPanel();
       }
     },
 
-    updateHealthInfo(player) {
-      if (!player || !player.name) {
-        this.selectedPlayerHealth = 0;
-        this.selectedPlayerMaxHealth = 0;
-        return;
-      }
-      this.selectedPlayerHealth = player.health !== undefined ? player.health : 0;
-      this.selectedPlayerMaxHealth = player.maxHealth || 100;
-    },
-
     getPlayerHealthPercent(player) {
-      if (!player || !player.maxHealth || !player.name) return 0;
+      if (!player || !player.maxHealth || !player.isInit) return 0;
       return Math.round(((player.health || 0) / player.maxHealth) * 100);
     },
 
@@ -823,7 +953,6 @@ export default {
         return;
       }
 
-      // Проверяем начало боя
       const wasBattleActive = this.isBattleActive;
       this.isBattleActive = battleData.isActive;
 
@@ -831,7 +960,6 @@ export default {
         this.enemies = battleData.enemies;
         this.showEnemiesPanel = true;
 
-        // Если бой только начался (был неактивен, стал активен)
         if (!wasBattleActive && battleData.isActive) {
           this.handleBattleStart();
         }
@@ -860,21 +988,18 @@ export default {
     },
 
     async handleBattleStart() {
-      // Вызываем API start-battle для получения результатов инициативы
       const gameData = this.$store.getters.GAME;
       if (!gameData || !gameData.id) return;
 
-      // Показываем экран загрузки и блокируем ввод
       this.isBattleLoading = true;
       this.isInputDisabled = true;
 
       try {
         const battleData = await this.$store.dispatch('startBattle', gameData.id);
-        
+
         this.isBattleLoading = false;
 
         if (battleData && battleData.roll_dices && battleData.roll_dices.length > 0) {
-          // Сортируем по общему результату (roll_dice + bonus) по убыванию
           const sortedResults = [...battleData.roll_dices].sort((a, b) => {
             const totalA = a.roll_dice + (a.bonus || 0);
             const totalB = b.roll_dice + (b.bonus || 0);
@@ -891,10 +1016,8 @@ export default {
             total: item.roll_dice + (item.bonus || 0)
           }));
 
-          // Показываем модалку с инициативой
           this.showInitiativeModal = true;
         } else {
-          // Если нет данных - разблокируем ввод
           this.isInputDisabled = false;
         }
       } catch (err) {
@@ -908,8 +1031,7 @@ export default {
     closeInitiativeModal() {
       this.showInitiativeModal = false;
       this.isInputDisabled = false;
-       
-      // Начинаем первый ход
+
       if (this.battleOrder.length > 0) {
         this.currentTurnIndex = 0;
         this.processTurn();
@@ -925,25 +1047,20 @@ export default {
       if (!currentUnit) return;
 
       if (currentUnit.unitType === 'gamer') {
-        // Ход игрока
         this.isPlayerTurn = true;
         this.isNPCTurn = false;
         this.waitingForPlayerAction = true;
-        
-        // Делаем этого игрока активным
-        const player = this.players.find(p => p.id === currentUnit.id);
-        if (player) {
-          this.currentPlayerId = player.id;
-          this.selectedPlayer = player;
-          this.updateHealthInfo(player);
+
+        const isNewGame = this.$store.getters.NEW_GAME;
+        if (!isNewGame || !this.isInitPhase) {
+          this.$store.commit('setCurrentGamer', currentUnit.id);
         }
+        this.currentPlayerId = currentUnit.id;
       } else {
-        // Ход НПС
         this.isPlayerTurn = false;
         this.isNPCTurn = true;
         this.waitingForPlayerAction = false;
-        
-        // Вызываем API для НПС
+
         this.executeNPCTurn();
       }
     },
@@ -951,46 +1068,32 @@ export default {
     async executeNPCTurn() {
       try {
         const currentUnit = this.battleOrder[this.currentTurnIndex];
-        
-        // Показываем индикатор хода НПС
+
         this.isNPCTyping = true;
         this.npcTypingName = currentUnit ? currentUnit.name : 'Противник';
-        
+
         const npcData = await this.$store.dispatch('npcAction', {
           gameId: this.$store.getters.GAME.id,
           npcId: currentUnit ? currentUnit.id : null
         });
-        
+
         this.isNPCTyping = false;
-        
+
         if (npcData) {
-          // Выводим действие в чат
           if (npcData.action) {
             this.addAIMessage(npcData.action, false, true);
           }
 
-          // Если есть урон - наносим его
           if (npcData.damage > 0 && npcData.gamer_id) {
-            const playerIndex = this.players.findIndex(p => p.id === npcData.gamer_id);
-            if (playerIndex !== -1) {
-              const currentHealth = this.players[playerIndex].health || 0;
-              this.players[playerIndex].health = Math.max(0, currentHealth - npcData.damage);
-              
-              // Показываем эффект урона
+            const player = this.players.find(p => p.id === npcData.gamer_id);
+            if (player) {
+              player.health = Math.max(0, (player.health || 0) - npcData.damage);
               this.showHealthChangeEffect(-npcData.damage);
-
-              // Обновляем выбранного игрока если это он
-              if (this.selectedPlayer && this.selectedPlayer.id === npcData.gamer_id) {
-                this.selectedPlayer = { ...this.players[playerIndex] };
-                this.updateHealthInfo(this.players[playerIndex]);
-              }
             }
           }
 
-          // Проверяем требование броска кубика после действия НПС
           this.checkDiceRequirement();
 
-          // Переходим к следующему ходу после небольшой задержки
           setTimeout(() => {
             this.nextTurn();
           }, 1000);
@@ -1011,34 +1114,9 @@ export default {
       this.processTurn();
     },
 
-    // Переопределяем selectPlayer для учета очереди боя
-    selectPlayer(playerId) {
-      // Если идет бой и сейчас ход игрока, проверяем можно ли выбрать игрока
-      if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
-        const currentUnit = this.battleOrder[this.currentTurnIndex];
-        if (currentUnit && currentUnit.unitType === 'gamer') {
-          // Можно выбрать только активного игрока
-          if (currentUnit.id !== playerId) {
-            return; // Нельзя выбрать другого игрока
-          }
-        }
-      }
-
-      const player = this.players.find(p => p.id === playerId);
-      if (!player) return;
-
-      this.currentPlayerId = playerId;
-      this.selectedPlayer = player;
-      this.updateHealthInfo(player);
-
-      if (window.innerWidth <= 768) {
-        this.closePlayersPanel();
-      }
-    },
-
     isSlotAvailable(level) {
-      if (!this.selectedPlayer || !this.selectedPlayer.name || !this.selectedPlayer.spellSlots) return false;
-      const slots = this.selectedPlayer.spellSlots;
+      if (!this.currentPlayer || !this.currentPlayer.isInit || !this.currentPlayer.spellSlots) return false;
+      const slots = this.currentPlayer.spellSlots;
       let slotArray;
       switch(level) {
         case 1: slotArray = slots.one; break;
@@ -1052,8 +1130,8 @@ export default {
     },
 
     getSpellCount(level) {
-      if (!this.selectedPlayer || !this.selectedPlayer.name || !this.selectedPlayer.spells) return 0;
-      return this.selectedPlayer.spells.filter(s => s.level === level).length;
+      if (!this.currentPlayer || !this.currentPlayer.isInit || !this.currentPlayer.spells) return 0;
+      return this.currentPlayer.spells.filter(s => s.level === level).length;
     },
 
     openSpellsModal(level) {
@@ -1202,44 +1280,21 @@ export default {
       this.removeDiceMessage();
 
       const actionsData = this.$store.getters.ACTIONS;
-      const gamerData = this.$store.getters.GAMER;
 
       if (actionsData && actionsData.reaction) {
         this.addAIMessage(actionsData.reaction, false, true);
       }
 
-      if (actionsData && actionsData.battle !== undefined) {
+      if (actionsData && actionsData.battle) {
         this.updateEnemies(actionsData.battle);
       }
 
-      if (actionsData && actionsData.healthModification !== undefined && actionsData.healthModification !== null && actionsData.healthModification !== 0) {
+      if (actionsData && actionsData.healthModification !== null && actionsData.healthModification !== undefined && actionsData.healthModification !== 0) {
         this.showHealthChangeEffect(actionsData.healthModification);
-      }
 
-      // Обновление данных игрока после броска кубика
-      if (this.requiredDice && this.requiredDice.gamerId) {
-        const playerIndex = this.players.findIndex(p => p.id === this.requiredDice.gamerId);
-        if (playerIndex !== -1) {
-          // Сначала вычисляем новое здоровье на основе healthModification
-          if (actionsData && actionsData.healthModification !== undefined) {
-            const currentHealth = this.players[playerIndex].health || 0;
-            this.players[playerIndex].health = currentHealth + actionsData.healthModification;
-          } else if (gamerData && gamerData.health !== undefined) {
-            // Используем данные из gamerData если healthModification не доступен
-            this.players[playerIndex].health = gamerData.health;
-          }
-          
-          if (gamerData && gamerData.maxHealth !== undefined) {
-            this.players[playerIndex].maxHealth = gamerData.maxHealth;
-          }
-          if (gamerData && gamerData.armor !== undefined) {
-            this.players[playerIndex].armor = gamerData.armor;
-          }
-
-          if (this.selectedPlayer && this.selectedPlayer.id === this.requiredDice.gamerId) {
-            this.selectedPlayer = { ...this.players[playerIndex] };
-            this.updateHealthInfo(this.players[playerIndex]);
-          }
+        if (this.currentPlayer) {
+          const currentHealth = this.currentPlayer.health || 0;
+          this.currentPlayer.health = Math.max(0, currentHealth + actionsData.healthModification);
         }
       }
 
@@ -1251,14 +1306,12 @@ export default {
 
       this.checkDiceRequirement();
 
-      // Если идет бой и игрок сделал бросок - проверяем требуется ли еще бросок
       if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
         const actionsAfterCheck = this.$store.getters.ACTIONS;
         if (!actionsAfterCheck || !actionsAfterCheck.requiredRollOfDice) {
-          // Больше бросков не требуется - переключаем ход
           this.waitingForPlayerAction = false;
           this.isPlayerTurn = false;
-          
+
           setTimeout(() => {
             this.nextTurn();
           }, 500);
@@ -1270,7 +1323,6 @@ export default {
       const text = this.newMessage.trim();
       if (!text || this.isAITyping || this.isInputDisabled) return;
 
-      // Проверка: во время боя можно отправлять сообщения только активному игроку
       if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
         const currentUnit = this.battleOrder[this.currentTurnIndex];
         if (currentUnit && currentUnit.unitType === 'gamer') {
@@ -1301,7 +1353,11 @@ export default {
         return;
       }
 
-      // НЕ удаляем сообщения при инициализации
+      if (player.isInit) {
+        this.addAIMessage('Этот игрок уже инициализирован.');
+        return;
+      }
+
       this.addPlayerMessage({ id: player.id, name: 'Игрок', avatar: '?', color: '#5B8CBE' }, text);
 
       this.isAITyping = true;
@@ -1314,81 +1370,75 @@ export default {
 
         const data = this.$store.getters.GAMER;
 
+        // Если пришло уточнение - показываем его и НЕ меняем состояние
         if (data && data.correction && data.correction !== '') {
           this.isAITyping = false;
           this.addCorrectionMessage(data.correction);
-          return;
-        }
-
-        if (data && data.name) {
-          const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
-
-          this.players[this.currentInitIndex] = {
-            id: player.id,
-            name: data.name || 'Неизвестно',
-            character: data.class || null,
-            avatar: (data.name || '?').charAt(0).toUpperCase(),
-            color: colors[this.currentInitIndex % colors.length],
-            description: data.description || '',
-            stats: data.stats || {},
-            inventory: data.inventory || [],
-            health: data.health || 100,
-            maxHealth: data.maxHealth || 100,
-            armor: data.armor || 0,
-            spells: data.spells || [],
-            spellSlots: data.spellSlots || {},
-          };
+          return; // Выходим, игрок остается тот же для повторного ввода
         }
 
         this.isAITyping = false;
 
-        const p = this.players[this.currentInitIndex];
+        if (data && data.name) {
+          // Всегда устанавливаем current gamer
+          this.$store.commit('setCurrentGamer', player.id);
+          this.currentPlayerId = player.id;
 
-        let statsText = '';
-        if (p.stats && Object.keys(p.stats).length) {
-          const statNames = {
-            strength: 'Сила', dexterity: 'Ловкость', constitution: 'Телосложение',
-            intelligence: 'Интеллект', wisdom: 'Мудрость', charisma: 'Харизма'
-          };
-          statsText = '<br><br><b>📊 Характеристики:</b><br>' +
-              Object.entries(p.stats).map(([k, v]) => `${statNames[k] || k}: ${v}`).join('<br>');
-        }
+          await this.$nextTick();
 
-        let inventoryText = '';
-        if (p.inventory && p.inventory.length) {
-          inventoryText = '<br><br><b>🎒 Инвентарь:</b><br>' +
-              p.inventory.map(item => `• <b>${item.title}</b> — ${item.description}`).join('<br>');
-        }
+          const updatedPlayer = this.currentPlayer;
+          if (!updatedPlayer) return;
 
-        this.addSystemMessage(`
-          <b>Персонаж создан!</b><br><br>
-          <b>Имя:</b> ${p.name}<br>
-          <b>Класс:</b> ${p.character || 'Нет'}<br>
-          <b>Здоровье:</b> ${p.health || 100} / ${p.maxHealth || 100}<br>
-          <b>Броня:</b> ${p.armor || 0}<br><br>
-          <b>Описание:</b><br>${p.description || 'Нет'}
-          ${statsText}
-          ${inventoryText}
-        `);
+          let statsText = '';
+          if (updatedPlayer.stats && Object.keys(updatedPlayer.stats).length) {
+            const statNames = {
+              strength: 'Сила', dexterity: 'Ловкость', constitution: 'Телосложение',
+              intelligence: 'Интеллект', wisdom: 'Мудрость', charisma: 'Харизма'
+            };
+            statsText = '<br><br><b>📊 Характеристики:</b><br>' +
+                Object.entries(updatedPlayer.stats).map(([k, v]) => `${statNames[k] || k}: ${v}`).join('<br>');
+          }
 
-        this.selectedPlayer = p;
-        this.updateHealthInfo(p);
+          let inventoryText = '';
+          if (updatedPlayer.inventory && updatedPlayer.inventory.length) {
+            inventoryText = '<br><br><b>🎒 Инвентарь:</b><br>' +
+                updatedPlayer.inventory.map(item => `• <b>${item.title}</b> — ${item.description}`).join('<br>');
+          }
 
-        this.currentInitIndex++;
-        if (this.currentInitIndex < this.players.length) {
-          const next = this.players[this.currentInitIndex];
-          this.currentPlayerId = next.id;
-          this.selectedPlayer = next;
-          this.updateHealthInfo(next);
-          setTimeout(() => {
-            this.addAIMessage('Следующий игрок, опишите своего персонажа!');
-          }, 500);
-        } else {
-          this.isInitPhase = false;
-          this.currentPlayerId = this.players[0]?.id || null;
-          this.selectedPlayer = this.players[0] || null;
-          this.updateHealthInfo(this.players[0]);
-          setTimeout(() => this.startGame(), 500);
+          this.addSystemMessage(`
+        <b>Персонаж создан!</b><br><br>
+        <b>Имя:</b> ${updatedPlayer.name}<br>
+        <b>Класс:</b> ${updatedPlayer.character || 'Нет'}<br>
+        <b>Здоровье:</b> ${updatedPlayer.health || 100} / ${updatedPlayer.maxHealth || 100}<br>
+        <b>Броня:</b> ${updatedPlayer.armor || 0}<br><br>
+        <b>Описание:</b><br>${updatedPlayer.description || 'Нет'}
+        ${statsText}
+        ${inventoryText}
+      `);
+
+          // Ищем следующего неинициализированного игрока
+          const nextNotInit = this.players.find(p => !p.isInit);
+
+          if (nextNotInit) {
+            this.$store.commit('setCurrentGamer', nextNotInit.id);
+            this.currentPlayerId = nextNotInit.id;
+
+            setTimeout(() => {
+              this.addAIMessage('Следующий игрок, опишите своего персонажа!');
+            }, 500);
+          } else {
+            this.isInitPhase = false;
+
+            if (this.players.length > 0) {
+              this.$store.commit('setCurrentGamer', this.players[0].id);
+              this.currentPlayerId = this.players[0].id;
+            }
+
+            const isNewGame = this.$store.getters.NEW_GAME;
+            if (isNewGame) {
+              setTimeout(() => this.startGame(), 500);
+            }
+          }
         }
       } catch (err) {
         this.isAITyping = false;
@@ -1423,16 +1473,11 @@ export default {
       }
 
       if (this.isFirstAction) {
-        // Не удаляем сообщения - оставляем начальный сюжет в чате
         this.showDivider = false;
         this.isFirstAction = false;
       }
 
       this.addPlayerMessage(player, text, true);
-
-      while (this.messages.length > 10) {
-        this.messages.splice(0, 2);
-      }
 
       this.isAITyping = true;
       try {
@@ -1440,10 +1485,9 @@ export default {
           gamer_id: player.id,
           action: text
         };
-
+        console.log(this.$store.getters.GAMER)
         await this.$store.dispatch('action', form);
         const actionsData = this.$store.getters.ACTIONS;
-        const gamerData = this.$store.getters.GAMER;
 
         this.isAITyping = false;
 
@@ -1456,67 +1500,28 @@ export default {
           this.addAIMessage(actionsData.reaction, false, true);
         }
 
-        // Обновление врагов при каждом действии
-        if (actionsData && actionsData.battle !== undefined) {
+        if (actionsData && actionsData.battle) {
           this.updateEnemies(actionsData.battle);
         }
 
         this.checkDiceRequirement();
 
-        // Если идет бой и игрок сделал действие без требования броска - переключаем ход
         if (this.isBattleActive && this.isPlayerTurn && this.waitingForPlayerAction) {
-          // Проверяем, был ли требуем бросок
           const actionsAfterCheck = this.$store.getters.ACTIONS;
           if (!actionsAfterCheck || !actionsAfterCheck.requiredRollOfDice) {
-            // Бросок не требуется - переключаем ход
             this.waitingForPlayerAction = false;
             this.isPlayerTurn = false;
-            
-            // Небольшая задержка перед переходом к следующему
+
             setTimeout(() => {
               this.nextTurn();
             }, 500);
           }
         }
 
-        const playerIndex = this.players.findIndex(p => p.id === player.id);
-
-        if (playerIndex !== -1) {
-          if (gamerData && gamerData.inventory) {
-            this.players[playerIndex].inventory = gamerData.inventory;
-          }
-
-          if (gamerData && gamerData.health !== undefined) {
-            this.players[playerIndex].health = gamerData.health;
-          }
-          if (gamerData && gamerData.maxHealth !== undefined) {
-            this.players[playerIndex].maxHealth = gamerData.maxHealth;
-          }
-
-          if (gamerData && gamerData.armor !== undefined) {
-            this.players[playerIndex].armor = gamerData.armor;
-          }
-
-          if (gamerData && gamerData.stats) {
-            this.players[playerIndex].stats = gamerData.stats;
-          }
-
-          if (gamerData && gamerData.spells) {
-            this.players[playerIndex].spells = gamerData.spells;
-          }
-
-          if (gamerData && gamerData.spellSlots) {
-            this.players[playerIndex].spellSlots = gamerData.spellSlots;
-          }
-
-          if (actionsData && actionsData.healthModification !== undefined && actionsData.healthModification !== null && actionsData.healthModification !== 0) {
-            this.showHealthChangeEffect(actionsData.healthModification);
-          }
-
-          if (this.selectedPlayer && this.selectedPlayer.id === player.id) {
-            this.selectedPlayer = { ...this.players[playerIndex] };
-            this.updateHealthInfo(this.players[playerIndex]);
-          }
+        if (actionsData && actionsData.healthModification !== null && actionsData.healthModification !== undefined && actionsData.healthModification !== 0) {
+          const currentHealth = player.health || 0;
+          player.health = Math.max(0, currentHealth + actionsData.healthModification);
+          this.showHealthChangeEffect(actionsData.healthModification);
         }
 
         if (actionsData && actionsData.isFinal) {
@@ -1682,7 +1687,7 @@ export default {
 
     leaveGame() {
       if (confirm('Выйти из игры?')) {
-        alert('Возвращайтесь скорее!');
+        this.$router.push('/');
       }
     }
   }

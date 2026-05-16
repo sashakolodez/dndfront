@@ -203,7 +203,8 @@ export default {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
 
-    goToGame(id) {
+    async goToGame(id) {
+      await this.$store.dispatch('searchGame', id)
       this.$router.push(`/${id}/game`);
     },
 

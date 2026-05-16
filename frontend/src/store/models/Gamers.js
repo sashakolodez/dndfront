@@ -1,7 +1,22 @@
+export class GamerCollection {
+    constructor() {
+        this.gamers = []
+    }
+    addGamers(data) {
+        for (let i = 0; i < data.length; i++) {
+            this.gamers.push(new Gamers(data[i]))
+        }
+    }
+
+    addGamer(gamer) {
+        this.gamers.push(gamer)
+    }
+}
 export class Gamers {
-    constructor(id = '', data = {}) {
-        this.id = id || null
+    constructor(data = {}) {
+        this.id = data.id || null
         this.name = data.name || ''
+        this.isInit = data.is_init
         this.class = data.class || null
         this.description = data.description || ''
         this.stats = new Stats(data.stats) || []
