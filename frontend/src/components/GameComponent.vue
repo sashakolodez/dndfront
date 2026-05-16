@@ -665,17 +665,16 @@ export default {
       const gamersCollection = this.$store.getters.GAMERS;
       const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
 
-      // Всегда сначала проверяем GAMERS
       if (gamersCollection && gamersCollection.gamers && gamersCollection.gamers.length > 0) {
         return gamersCollection.gamers.map((gamer, index) => ({
           ...gamer,
           avatar: (gamer.name || '?').charAt(0).toUpperCase(),
           color: colors[index % colors.length],
-          displayName: gamer.name || `Игрок ${index + 1}`
+          displayName: gamer.name || `Игрок ${index + 1}`,
+          character: gamer.class || gamer.character || null
         }));
       }
 
-      // Если GAMERS пуст, но есть gamerIds (новая игра, стадия инициализации)
       if (game && game.gamerIds && game.gamerIds.length > 0) {
         return game.gamerIds.map((id, index) => ({
           id: id,
@@ -703,7 +702,6 @@ export default {
     currentPlayer() {
       const colors = ['#5B8CBE', '#6B9E7A', '#B57B5C', '#BE5B8C', '#8CBE5B', '#5BBE8C', '#BE8C5B', '#8C5BBE'];
 
-      // Сначала всегда проверяем GAMER в store
       const gamer = this.$store.getters.GAMER;
       if (gamer && gamer.id) {
         const playerIndex = this.players.findIndex(p => p.id === gamer.id);
@@ -712,17 +710,19 @@ export default {
           ...gamer,
           avatar: (gamer.name || '?').charAt(0).toUpperCase(),
           color: colors[playerIndex >= 0 ? playerIndex % colors.length : 0],
-          displayName: gamer.name || `Игрок ${playerIndex + 1}`
+          displayName: gamer.name || `Игрок ${playerIndex + 1}`,
+          character: gamer.class || gamer.character || null
         };
       }
 
-      // Если GAMER пустой, ищем в players
       const player = this.players.find(p => p.id === this.currentPlayerId);
       if (player && player.name) {
-        return player;
+        return {
+          ...player,
+          character: player.class || player.character || null
+        };
       }
 
-      // Для новой игры на стадии инициализации
       if (this.isNewGame && this.isInitPhase) {
         const tempPlayer = this.players.find(p => p.id === this.currentPlayerId);
         return tempPlayer || this.players[0] || this.getDefaultPlayer();
@@ -1313,6 +1313,29 @@ export default {
         }
       }
 
+      // Обновляем maxHealth и другие данные из state.gamer
+      const gamerData = this.$store.getters.GAMER;
+      if (gamerData && this.currentPlayer) {
+        if (gamerData.maxHealth !== undefined) {
+          this.currentPlayer.maxHealth = gamerData.maxHealth;
+        }
+        if (gamerData.armor !== undefined) {
+          this.currentPlayer.armor = gamerData.armor;
+        }
+        if (gamerData.stats) {
+          this.currentPlayer.stats = gamerData.stats;
+        }
+        if (gamerData.spells) {
+          this.currentPlayer.spells = gamerData.spells;
+        }
+        if (gamerData.spellSlots) {
+          this.currentPlayer.spellSlots = gamerData.spellSlots;
+        }
+        if (gamerData.inventory) {
+          this.currentPlayer.inventory = gamerData.inventory;
+        }
+      }
+
       if (actionsData && actionsData.isFinal) {
         const isVictory = actionsData.isVictory || false;
         const message = actionsData.finalMessage || '';
@@ -1394,7 +1417,6 @@ export default {
         this.isAITyping = false;
 
         if (data && data.name) {
-          // ВСЕГДА устанавливаем current gamer
           this.$store.commit('setCurrentGamer', player.id);
           this.currentPlayerId = player.id;
 
@@ -1544,6 +1566,29 @@ export default {
           const currentHealth = player.health || 0;
           player.health = Math.max(0, currentHealth + actionsData.healthModification);
           this.showHealthChangeEffect(actionsData.healthModification);
+        }
+
+        // Обновляем maxHealth и другие данные из state.gamer
+        const gamerData = this.$store.getters.GAMER;
+        if (gamerData) {
+          if (gamerData.maxHealth !== undefined) {
+            player.maxHealth = gamerData.maxHealth;
+          }
+          if (gamerData.armor !== undefined) {
+            player.armor = gamerData.armor;
+          }
+          if (gamerData.stats) {
+            player.stats = gamerData.stats;
+          }
+          if (gamerData.spells) {
+            player.spells = gamerData.spells;
+          }
+          if (gamerData.spellSlots) {
+            player.spellSlots = gamerData.spellSlots;
+          }
+          if (gamerData.inventory) {
+            player.inventory = gamerData.inventory;
+          }
         }
 
         if (actionsData && actionsData.isFinal) {
