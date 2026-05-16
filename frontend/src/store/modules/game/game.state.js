@@ -38,6 +38,11 @@ const mutations = {
     setGame(state, content) {
         state.game = content ? new Game(content) : null
         state.newGame = true
+        state.gamers = null
+        state.gamer = null
+        state.actions = null
+        state.dice = null
+        state.newGame = true
     },
     setGamer(state, content, id) {
         state.gamer = content ? new Gamers(content) : null
@@ -48,6 +53,7 @@ const mutations = {
         else {
             state.gamers.addGamer(state.gamer)
         }
+        console.log(state.gamer)
     },
     setStart(state, data) {
         state.game.addStartMess(data)
@@ -75,7 +81,7 @@ const mutations = {
                 break
             }
         }
-        console.log(state.gamer)
+        console.log(state.gamers)
     }
 }
 

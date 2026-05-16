@@ -2,6 +2,7 @@ export class GamerCollection {
     constructor() {
         this.gamers = []
     }
+
     addGamers(data) {
         for (let i = 0; i < data.length; i++) {
             this.gamers.push(new Gamers(data[i]))
@@ -9,7 +10,13 @@ export class GamerCollection {
     }
 
     addGamer(gamer) {
-        this.gamers.push(gamer)
+        if (!gamer) return
+        const existingIndex = this.gamers.findIndex(g => g.id === gamer.id)
+        if (existingIndex !== -1) {
+            this.gamers[existingIndex] = gamer
+        } else {
+            this.gamers.push(gamer)
+        }
     }
 }
 export class Gamers {
